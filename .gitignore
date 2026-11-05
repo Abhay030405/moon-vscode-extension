@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+out/
+build/
+*.vsix
+*.tsbuildinfo
+
+# Eval results (keep the folder)
+packages/evals/results/*
+!packages/evals/results/.gitkeep
+
+# Local config and secrets (only *.example.json is committed)
+config/*.json
+!config/*.example.json
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Test checkouts (setup-flask script)
+flask/
+
+# Logs and coverage
+*.log
+coverage/
+
+# Editor / OS
+.vscode-test/
+.DS_Store
+Thumbs.db
+
+# Reference clones of other projects (read-only, never committed)
+reference/
