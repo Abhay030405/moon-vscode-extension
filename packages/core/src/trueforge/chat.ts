@@ -3,6 +3,10 @@
 //
 // Stop = abort the local stream at once (the UI stops immediately) and ask TrueForge to
 // cancel the session's running turn.
+//
+// Only turns that finished normally make up the conversation: each new turn continues from
+// the last finished one. A stopped or failed turn becomes a dead branch, so its unanswered
+// question is not answered again with the next message.
 
 import type { TrueForgeClient } from "./client.js";
 import { TurnEventMapper, type MoonEvent } from "./events.js";
@@ -22,6 +26,8 @@ export interface ChatOptions {
 export class AgentChat {
   private sessionId: string | undefined;
   private running: AbortController | undefined;
+  /** Last turn that finished normally; the next turn continues from it. */
+  private lastFinishedTurnId: string | undefined;
 
   constructor(private readonly options: ChatOptions) {}
 
@@ -35,8 +41,12 @@ export class AgentChat {
     const abort = new AbortController();
     this.running = abort;
     let finished = false;
+    let turnId: string | undefined;
     const report = (event: MoonEvent) => {
-      if (event.type === "done") finished = true;
+      if (event.type === "done") {
+        finished = true;
+        if (event.status === "done" && turnId) this.lastFinishedTurnId = turnId;
+      }
       emit(event);
     };
     try {
@@ -49,11 +59,16 @@ export class AgentChat {
       }
       const stream = await client.sdk.sessions.createTurnStream(
         this.sessionId,
-        { input: [{ type: "user.message", content: message }] },
+        {
+          input: [{ type: "user.message", content: message }],
+          // "none" = start the conversation fresh (first message, or nothing has finished yet).
+          previousTurnId: this.lastFinishedTurnId ?? "none",
+        },
         { abortSignal: abort.signal },
       );
       const mapper = new TurnEventMapper();
       for await (const event of stream) {
+        if (event.type === "turn.created") turnId = event.turnId;
         for (const moonEvent of mapper.map(event)) report(moonEvent);
         if (finished) break;
       }
