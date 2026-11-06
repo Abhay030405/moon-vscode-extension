@@ -6,7 +6,7 @@
 // is finished, when their names and arguments are complete.
 
 import { mergeEventDelta, type TrueForgeApi } from "@truefoundry/trueforge-sdk";
-import { MAIN_THREAD_ID } from "../shared/constants.js";
+import { MAIN_THREAD_ID, TRUEFORGE_CALL_TOOL } from "../shared/constants.js";
 import { MOON_TOOLS } from "../tools/registry.js";
 import type { ToolStep } from "../tools/tool.js";
 
@@ -89,11 +89,18 @@ export class TurnEventMapper {
  * Other tools (TrueForge's own, e.g. list_tools) show their name as words: "List tools".
  */
 export function describeToolCall(toolName: string, argumentsJson: string): ToolStep {
-  const tool = MOON_TOOLS.find((t) => t.name === toolName);
   const fallback = { action: humanize(toolName), target: "" };
-  if (!tool) return fallback;
   try {
-    return tool.describe(JSON.parse(argumentsJson || "{}"));
+    let name = toolName;
+    let args = JSON.parse(argumentsJson || "{}");
+    // With deferred tool loading the model may call a tool through TrueForge's wrapper:
+    // call_tool {mcp_server, tool_name, input}. Show the wrapped tool's own step.
+    if (name === TRUEFORGE_CALL_TOOL && typeof args?.tool_name === "string") {
+      name = args.tool_name;
+      args = args.input ?? {};
+    }
+    const tool = MOON_TOOLS.find((t) => t.name === name);
+    return tool ? tool.describe(args) : { action: humanize(name), target: "" };
   } catch {
     return fallback;
   }

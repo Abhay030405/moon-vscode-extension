@@ -44,7 +44,19 @@ export const MCP_SERVER_VERSION = "0.1.0";
 
 /** Description Moon's MCP server is registered with in TrueForge. */
 export const MOON_MCP_DESCRIPTION =
-  "Moon editor tools: list, search and read files of the project open in VS Code.";
+  "Moon editor tools: list, search and read files of the project open in VS Code, see its errors, and propose edits for review.";
 
 /** TrueForge's thread id for the root agent; other threads are subagents. */
 export const MAIN_THREAD_ID = "main";
+
+/**
+ * The line diff compares at most this many line pairs (old lines x new lines, after the
+ * common start and end are trimmed). Bigger changes are shown as one hunk.
+ */
+export const DIFF_MAX_CELLS = 4_000_000;
+
+/** How long a short Moon message stays in the status bar. */
+export const STATUS_MESSAGE_MS = 6000;
+
+/** TrueForge's wrapper tool for calling a deferred tool: call_tool {mcp_server, tool_name, input}. */
+export const TRUEFORGE_CALL_TOOL = "call_tool";

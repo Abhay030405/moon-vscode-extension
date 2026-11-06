@@ -28,6 +28,58 @@
         "command": "moon.checkSetup",
         "title": "Check setup",
         "category": "Moon"
+      },
+      {
+        "command": "moon.inlineEdit",
+        "title": "Edit selection with Moon",
+        "category": "Moon",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "moon.inlineEdit.submit",
+        "title": "Edit",
+        "category": "Moon"
+      },
+      {
+        "command": "moon.inlineEdit.cancel",
+        "title": "Cancel",
+        "category": "Moon"
+      },
+      {
+        "command": "moon.inlineEdit.stop",
+        "title": "Stop",
+        "category": "Moon",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "moon.inlineEdit.close",
+        "title": "Close",
+        "category": "Moon",
+        "icon": "$(close)"
+      },
+      {
+        "command": "moon.inlineEdit.acceptHunk",
+        "title": "Accept this change",
+        "category": "Moon",
+        "icon": "$(check)"
+      },
+      {
+        "command": "moon.inlineEdit.rejectHunk",
+        "title": "Reject this change",
+        "category": "Moon",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "moon.inlineEdit.acceptAll",
+        "title": "Accept all changes",
+        "category": "Moon",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "moon.inlineEdit.rejectAll",
+        "title": "Reject all changes",
+        "category": "Moon",
+        "icon": "$(close-all)"
       }
     ],
     "viewsContainers": {
@@ -56,9 +108,125 @@
           "default": "",
           "scope": "machine",
           "markdownDescription": "Full path to Moon's `moon.json` config file. Leave empty to use `config/moon.json` in the Moon repository the extension runs from."
+        },
+        "moon.inlineEdit.useCtrlI": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Use **Ctrl+I** (Cmd+I on macOS) for Moon's inline edit instead of Copilot's inline chat. Turn it off to give Ctrl+I back to Copilot; Moon's inline edit then stays on **Ctrl+Alt+M**."
         }
       }
-    }
+    },
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "moon.inlineEdit.submit",
+          "when": "false"
+        },
+        {
+          "command": "moon.inlineEdit.cancel",
+          "when": "false"
+        },
+        {
+          "command": "moon.inlineEdit.stop",
+          "when": "false"
+        },
+        {
+          "command": "moon.inlineEdit.close",
+          "when": "false"
+        },
+        {
+          "command": "moon.inlineEdit.acceptHunk",
+          "when": "false"
+        },
+        {
+          "command": "moon.inlineEdit.rejectHunk",
+          "when": "false"
+        },
+        {
+          "command": "moon.inlineEdit",
+          "when": "editorIsOpen"
+        },
+        {
+          "command": "moon.inlineEdit.acceptAll",
+          "when": "false"
+        },
+        {
+          "command": "moon.inlineEdit.rejectAll",
+          "when": "false"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "moon.inlineEdit",
+          "when": "editorTextFocus && !editorReadonly",
+          "group": "1_modification@9"
+        }
+      ],
+      "comments/commentThread/context": [
+        {
+          "command": "moon.inlineEdit.submit",
+          "group": "inline@1",
+          "when": "commentController == moon-inline && (!commentThread || commentThread == moon-ask)"
+        },
+        {
+          "command": "moon.inlineEdit.cancel",
+          "group": "inline@2",
+          "when": "commentController == moon-inline && (!commentThread || commentThread == moon-ask)"
+        }
+      ],
+      "comments/commentThread/title": [
+        {
+          "command": "moon.inlineEdit.stop",
+          "group": "inline@1",
+          "when": "commentController == moon-inline && commentThread == moon-running"
+        },
+        {
+          "command": "moon.inlineEdit.acceptAll",
+          "group": "inline@1",
+          "when": "commentController == moon-inline && commentThread == moon-review"
+        },
+        {
+          "command": "moon.inlineEdit.rejectAll",
+          "group": "inline@2",
+          "when": "commentController == moon-inline && commentThread == moon-review"
+        },
+        {
+          "command": "moon.inlineEdit.close",
+          "group": "inline@9",
+          "when": "commentController == moon-inline && commentThread =~ /^moon-(ask|running|review)$/"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "moon.inlineEdit",
+        "key": "ctrl+i",
+        "mac": "cmd+i",
+        "when": "editorTextFocus && !editorReadonly && !commentEditorFocused && config.moon.inlineEdit.useCtrlI"
+      },
+      {
+        "command": "moon.inlineEdit",
+        "key": "ctrl+alt+m",
+        "when": "editorTextFocus && !editorReadonly && !commentEditorFocused"
+      },
+      {
+        "command": "moon.inlineEdit.stop",
+        "key": "escape",
+        "when": "moon.inlineEditRunning"
+      }
+    ],
+    "colors": [
+      {
+        "id": "moon.pendingChangesForeground",
+        "description": "Colour of the dot Moon shows in the Explorer on files (and their folders) with changes waiting for review.",
+        "defaults": {
+          "dark": "gitDecoration.addedResourceForeground",
+          "light": "gitDecoration.addedResourceForeground",
+          "highContrast": "gitDecoration.addedResourceForeground",
+          "highContrastLight": "gitDecoration.addedResourceForeground"
+        }
+      }
+    ]
   },
   "scripts": {
     "build": "esbuild src/activate.ts --bundle --platform=node --format=cjs --external:vscode --sourcemap --outfile=dist/extension.js",

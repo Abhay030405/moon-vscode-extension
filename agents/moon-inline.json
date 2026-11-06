@@ -1,1 +1,16 @@
-{}
+{
+  "$comment": "Moon's inline-edit definition (Ctrl+I in the editor), sent to TrueForge as an inline AgentSpec for each inline edit. Same placeholders as moon-agent.json. Small toolbox: a few read-only lookups, the editor's problems, and propose_edit, which only hands the change back for review (it never writes), so it does not pause for approval.",
+  "model": { "name": "{{model}}" },
+  "instructions": "{{file:prompts/inline-instructions.md}}\n\n{{file:prompts/safety-rules.md}}",
+  "mcpServers": [
+    {
+      "name": "{{mcpServer}}",
+      "enableTools": ["read_file", "search_text", "find_definition", "get_errors", "propose_edit"],
+      "preloadTools": ["read_file", "search_text", "find_definition", "get_errors", "propose_edit"],
+      "requireApprovalForTools": []
+    }
+  ],
+  "config": {
+    "iterationLimit": 8
+  }
+}

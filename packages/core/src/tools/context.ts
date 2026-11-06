@@ -1,7 +1,7 @@
 // What every tool needs: the project folder (behind the path guard), the secret guard,
 // and the limits from config. Plus a safe file walker shared by the tools.
 
-import { closeSync, openSync, readdirSync, readSync, statSync } from "node:fs";
+import { closeSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import * as path from "node:path";
 import { PathGuard } from "../safety/path-guard.js";
 import { SecretGuard } from "../safety/secret-guard.js";
@@ -12,11 +12,43 @@ export class ToolError extends Error {
   override readonly name = "ToolError";
 }
 
+/** A problem the editor reports for a file (VS Code's Problems panel). */
+export interface EditorDiagnostic {
+  /** Project-relative path. */
+  path: string;
+  /** 1-based. */
+  line: number;
+  column: number;
+  severity: "error" | "warning" | "info" | "hint";
+  message: string;
+  source?: string;
+}
+
+/** What the editor tells the tools. Without it (tests, evals) tools use the files on disk. */
+export interface EditorBridge {
+  /** Text of the file as open in the editor, including unsaved changes; undefined if not open. */
+  openText(abs: string): string | undefined;
+  /** Problems for one file (project-relative), or for every open file when `rel` is undefined. */
+  diagnostics(rel?: string): EditorDiagnostic[];
+}
+
+/** The running inline edit: the one file propose_edit may change, and where the proposal goes. */
+export interface InlineTarget {
+  /** Project-relative path of the file being edited. */
+  rel: string;
+  /** Receives the full proposed text. Called on every successful propose_edit (last one wins). */
+  onProposal(proposedText: string): void;
+}
+
 export class ToolContext {
   readonly paths: PathGuard;
   readonly secrets: SecretGuard;
   readonly limits: MoonConfig["tools"];
   private readonly ignoredDirs: Set<string>;
+  /** Set by the VS Code extension. */
+  editor: EditorBridge | undefined;
+  /** Set only while an inline edit runs. */
+  inlineTarget: InlineTarget | undefined;
 
   constructor(root: string, config: Pick<MoonConfig, "tools" | "safety">) {
     this.paths = new PathGuard(root);
@@ -32,6 +64,29 @@ export class ToolContext {
       throw new ToolError(`"${resolved.rel}" may contain secrets (keys, passwords), so Moon's tools do not read it.`);
     }
     return resolved;
+  }
+
+  /**
+   * Text of a readable file: the editor's (unsaved) text when it is open, else the file on disk.
+   * Refuses missing, too large and binary files with a ToolError.
+   */
+  readText(abs: string, rel: string): string {
+    const open = this.editor?.openText(abs);
+    if (open !== undefined) return open;
+    let size: number;
+    try {
+      const stat = statSync(abs);
+      if (!stat.isFile()) throw new ToolError(`"${rel}" is not a file.`);
+      size = stat.size;
+    } catch (err) {
+      if (err instanceof ToolError) throw err;
+      throw new ToolError(`File not found: ${rel}`);
+    }
+    if (size > this.limits.maxFileBytes) {
+      throw new ToolError(`"${rel}" is too large to read (${size} bytes). Use search_text to find the part you need.`);
+    }
+    if (looksBinary(abs)) throw new ToolError(`"${rel}" looks like a binary file.`);
+    return readFileSync(abs, "utf8");
   }
 
   /**

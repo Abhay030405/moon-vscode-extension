@@ -50,6 +50,14 @@ export const MoonConfigSchema = z
     agent: z.strictObject({
       /** Agent definition for agent mode, relative to the Moon repo root. */
       definitionFile: z.string().min(1),
+      /** Agent definition for inline edit (Ctrl+I), relative to the Moon repo root. */
+      inlineDefinitionFile: z.string().min(1),
+    }),
+    inline: z.strictObject({
+      /** Lines of the file sent with an inline edit, before and after the selection. */
+      contextLines: positiveInt,
+      /** Most editor problems (errors, warnings) sent with an inline edit. */
+      maxProblems: z.number().int().min(0),
     }),
     resilience: z.strictObject({
       /** No streamed event within this time after sending: cancel and switch to backup. */
