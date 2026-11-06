@@ -88,7 +88,7 @@ Moon uses exactly **two** models, both configured in TrueForge:
 **Never write a literal value in code when it is a setting.** That means model names, provider
 names, URLs, ports, timeouts, budgets, limits, retry counts and feature flags.
 
-- **Secrets go in `.env`** (git-ignored). `.env.example` lists every variable with an empty value. Keys are passed to TrueForge by `scripts/start-trueforge.*`; Moon's code never reads or sends provider keys.
+- **Secrets go in `.env`** (git-ignored). `.env.example` lists every variable with an empty value. Keys are entered into TrueForge's own model-provider settings (TrueForge does not read them from environment variables); Moon's code never reads or sends provider keys.
 - **Everything else goes in config.** `config/moon.example.json` and `config/trueforge.example.json` hold the main/backup model, provider names, TrueForge URL, timers (watchdog, circuit breaker), context budget, tool output limits, etc. Real configs (`config/*.json`) are git-ignored.
 - Code reads settings through **one config module** in `packages/core/src/shared/`. No other file reads `.env` or the config files directly, and no file contains a model name, URL or magic number.
 - Real constants (things that never change between setups) live in one constants file in `packages/core/src/shared/`, not scattered inline.
@@ -118,3 +118,6 @@ names, URLs, ports, timeouts, budgets, limits, retry counts and feature flags.
 - Must work on Windows and macOS/Linux (paths, process killing, scripts in both `.ps1` and `.sh`).
 - Keep changes small and follow the phase order in `docs/architecture.md` section 7.
 - We must be able to explain every line in the shortlist call, so prefer simple, readable code over clever code.
+
+## 7. env rule
+- when you change anything in the .env.example run this code always for windows : "powershell -ExecutionPolicy Bypass -File config/sync-env.ps1 -NoBackup", for Linux / Mac / Git Bash :  "sh config/sync-env.sh --no-backup"

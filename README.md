@@ -56,10 +56,10 @@ Costs and per-model results are reported in the write-up (`docs/writeup/`).
 
 ## Requirements
 
-- **Node.js** 20 or newer, and **pnpm**
+- **Node.js** 22.14 or newer (TrueForge needs it), and **pnpm**
 - **VS Code** (latest stable)
 - **Git**
-- **Python** 3.9+ (only for running the Flask demo tasks and evals)
+- **Python** 3.10+ (only for the Flask demo tasks and evals)
 - API access to at least one model (see [Models](#models))
 
 Works on **Windows** and **macOS/Linux**.
@@ -89,8 +89,15 @@ Fill in `.env`:
 | `ANTHROPIC_API_KEY` | Key for the main model (Claude) |
 | `AZURE_FOUNDRY_API_KEY` | Key for the backup model (DeepSeek on Azure AI Foundry) |
 | `AZURE_FOUNDRY_ENDPOINT` | Your Azure AI Foundry endpoint URL |
+| `AZURE_FOUNDRY_MODEL` | The DeepSeek deployment name in Azure (default `DeepSeek-V4.1-Flash-2`); must match `models.backup.model` in `config/moon.json` |
 
 `.env` is git-ignored. **Never commit keys.** The keys are given to TrueForge only; Moon's own code never reads them.
+
+When `.env.example` gains a new variable, bring your `.env` up to date without losing your values:
+
+```bash
+powershell -ExecutionPolicy Bypass -File config/sync-env.ps1 -NoBackup   # Windows
+```
 
 ### 3. Create your config
 
@@ -99,8 +106,8 @@ cp config/moon.example.json config/moon.json
 cp config/trueforge.example.json config/trueforge.json
 ```
 
-- `config/trueforge.json`: the model providers TrueForge should know about (names, models, window sizes; no keys).
-- `config/moon.json`: Moon's settings (main and backup model, context budget, timers, limits).
+- `config/trueforge.json`: the model providers TrueForge should know about (names, models, window sizes). Secrets are not stored here; it names the `.env` variables instead.
+- `config/moon.json`: Moon's settings: TrueForge version, URL and port, main and backup model, resilience timers, context budget, tool limits, and the Flask checkout used for the demo tasks. Moon checks this file on start and names any field that is wrong.
 
 Real config files are git-ignored; only the `*.example.json` files are committed.
 
@@ -108,16 +115,27 @@ Real config files are git-ignored; only the `*.example.json` files are committed
 
 ```bash
 # Windows
-./scripts/start-trueforge.ps1
+powershell -ExecutionPolicy Bypass -File scripts/start-trueforge.ps1
 
 # macOS / Linux
-./scripts/start-trueforge.sh
+sh scripts/start-trueforge.sh
 ```
 
-The script loads `.env` and runs `npx @truefoundry/trueforge@latest` with `OUTBOUND_URL_ALLOWED_HOSTS=["localhost","127.0.0.1"]`.
+The script checks your Node.js version, then runs `npx @truefoundry/trueforge@<trueforge.version> --port <trueforge.port>` (both from `config/moon.json`) with `OUTBOUND_URL_ALLOWED_HOSTS` set from `trueforge.allowedOutboundHosts`.
 That variable is required: TrueForge blocks calls to localhost by default, and Moon's MCP server runs on localhost.
 
-TrueForge then runs at `http://localhost:8790` (session viewer there, API docs at `/api/v1/docs`).
+TrueForge then runs at `http://localhost:8790` (chat UI and sessions there, API docs at `/api/v1/docs`). The first start downloads TrueForge and takes about a minute. Leave this terminal open.
+
+### 4b. Add the model providers in TrueForge
+
+TrueForge keeps its model providers in its own settings (it does not read keys from environment variables). Open `http://localhost:8790` → settings → model providers, and add the two providers listed in `config/trueforge.json`:
+
+| Provider name | Type | Values |
+|---|---|---|
+| `anthropic` | Anthropic | API key = `ANTHROPIC_API_KEY`; model `claude-sonnet-5-5` |
+| `azure-deepseek` | Custom (OpenAI-compatible) | Base URL = `AZURE_FOUNDRY_ENDPOINT`, API key = `AZURE_FOUNDRY_API_KEY`; model = `AZURE_FOUNDRY_MODEL`, context length 128000, max output 8192 |
+
+The provider and model names must match `models.main` and `models.backup` in `config/moon.json`.
 
 ### 5. Load the agent definitions
 
@@ -163,10 +181,12 @@ The three fixed tasks run on `pallets/flask`, tag `3.1.3` (commit `22d92470`):
 
 ```bash
 # Windows
-./scripts/setup-flask.ps1
+powershell -ExecutionPolicy Bypass -File scripts/setup-flask.ps1
 # macOS / Linux
-./scripts/setup-flask.sh
+sh scripts/setup-flask.sh
 ```
+
+The script clones Flask into `flask/` (git-ignored, set by `flask.dir`), checks out the tag and confirms the commit, creates `flask/.venv` and installs Flask with its test requirements. The venv and test cache are hidden from Flask's `git status` (through `.git/info/exclude`), so `git status` stays clean for Task C. Add `-SkipInstall` / `--skip-install` to only check out the code.
 
 | Task | Instruction | Check |
 |---|---|---|
@@ -180,8 +200,9 @@ The three fixed tasks run on `pallets/flask`, tag `3.1.3` (commit `22d92470`):
 
 | Command | What it does |
 |---|---|
-| `pnpm build` | Build all packages *(planned)* |
-| `pnpm test` | Unit tests for `packages/core` (no model, no VS Code) *(planned)* |
+| `pnpm build` | Build all packages (the extension is bundled with esbuild into `packages/extension/dist/`) |
+| `pnpm test` | Unit tests for `packages/core` with Vitest (no model, no VS Code) |
+| `pnpm typecheck` | TypeScript checks for every package |
 | `pnpm eval` | Run the evaluation scenarios against real TrueForge and a real model *(planned)* |
 | `pnpm package` | Build the `.vsix` *(planned)* |
 

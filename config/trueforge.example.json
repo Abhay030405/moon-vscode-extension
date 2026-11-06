@@ -1,1 +1,18 @@
-{}
+{
+  "$comment": "The model providers to add in TrueForge. No secrets here: apiKeyEnv / baseUrlEnv / idEnv name the .env variable that holds the value.",
+  "providers": [
+    {
+      "name": "anthropic",
+      "type": "anthropic",
+      "apiKeyEnv": "ANTHROPIC_API_KEY",
+      "models": [{ "id": "claude-sonnet-5-5" }]
+    },
+    {
+      "name": "azure-deepseek",
+      "type": "custom",
+      "baseUrlEnv": "AZURE_FOUNDRY_ENDPOINT",
+      "apiKeyEnv": "AZURE_FOUNDRY_API_KEY",
+      "models": [{ "idEnv": "AZURE_FOUNDRY_MODEL", "contextLength": 128000, "maxOutputTokens": 8192 }]
+    }
+  ]
+}
