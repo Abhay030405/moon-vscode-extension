@@ -64,7 +64,9 @@ moon/
 │
 ├── config/
 │   ├── trueforge.example.json    example model setup (provider names, models, window sizes; NO keys)
-│   └── moon.example.json         example Moon settings (main/backup model, budgets, timers)
+│   ├── moon.example.json         example Moon settings (main/backup model, budgets, timers)
+│   ├── test-repos.json           repos used to TEST Moon (Flask 3.1.3 first), with setup commands
+│   └── sync-env.ps1              brings .env up to date with .env.example, keeping values
 │
 ├── agents/                       the agent definitions (the PS requires these in the repo)
 │   ├── moon-agent.json           agent mode: tools, approval list, loop limit, compaction
@@ -78,7 +80,9 @@ moon/
 ├── scripts/
 │   ├── start-trueforge.ps1       Windows: sets OUTBOUND_URL_ALLOWED_HOSTS, starts TrueForge
 │   ├── start-trueforge.sh        macOS/Linux: same
+│   ├── setup-providers.ps1 / .sh registers the model providers in TrueForge from config/trueforge.json + .env
 │   ├── setup-test-repo.ps1 / .sh clones the test repos in config/test-repos.json (Flask 3.1.3 for the fixed tasks)
+│   ├── lib/                      helpers shared by the scripts (.env + config reading, allowed hosts)
 │   └── hanging-server            tiny test server that accepts a connection and never answers (Task C eval)
 │
 ├── packages/
@@ -116,7 +120,7 @@ moon/
 │   │   │   │     run-command, apply-changes, propose-edit
 │   │   │   │     limits            caps on output size for every tool
 │   │   │   ├── process/          running commands
-│   │   │   │     runner            runs a command in the copy, Python pointed at the copy's src
+│   │   │   │     runner            runs a command in the copy (copy = working folder, plus configured env vars)
 │   │   │   │     kill-tree         stops a command and every helper it started (Windows + macOS/Linux)
 │   │   │   ├── safety/           section 6
 │   │   │   │     path-guard        tools can only touch files inside the project / copy
@@ -186,7 +190,7 @@ Short list. Details and reasons are in `moon-design-decisions.md`.
 | Resilience | Error classifier; switch to backup on bad key / unreachable; 10–12 s watchdog; circuit breaker to return to main; switch notice; Retry when all fail | B3 |
 | TrueForge depth | MCP tools; TrueForge approval drives review and commands; subagents (scout); compaction; deferred tool loading | B4 |
 | Safety | Path guard, secret guard, untrusted-text marking, command check (section 6) | supports all |
-| Later (stretch) | Moon notes (`/update`), more map languages (JS/TS, Java, Go) | extra |
+| Later (stretch) | Moon notes (`/update`), more map languages (Java, Go) | extra |
 
 ---
 
@@ -299,7 +303,7 @@ Dates assume starting **6 November** and finishing on **19 November**, with 20 N
 
 **Build**
 - Monorepo skeleton (section 2), Apache-2.0 licence, NOTICE.md, .gitignore.
-- `scripts/start-trueforge` (sets `OUTBOUND_URL_ALLOWED_HOSTS`) and `scripts/setup-test-repo`.
+- `scripts/start-trueforge` (sets `OUTBOUND_URL_ALLOWED_HOSTS`), `scripts/setup-providers` and `scripts/setup-test-repo`. (done 6 Nov)
 - `config/*.example.json`.
 - Extension starts, reads settings, shows "Moon: connected to TrueForge (N models)" in the status bar.
 - A command "Moon: Check setup" that lists models from TrueForge and their window sizes.
@@ -356,7 +360,7 @@ Dates assume starting **6 November** and finishing on **19 November**, with 20 N
 
 **Build**
 - Hidden copy in the temp folder from editor text (including unsaved changes); skips junk folders.
-- Tools: `edit_file` (replace exact text; whole file only for new files), `list_pending_changes`, `run_command` (in the copy, Python pointed at the copy's `src`, with kill-tree), `apply_changes`.
+- Tools: `edit_file` (replace exact text; whole file only for new files), `list_pending_changes`, `run_command` (in the copy, with the configured env vars, with kill-tree; on Flask, check the tests really load the copy), `apply_changes`.
 - Approval list in the agent definition: only `run_command` and `apply_changes` pause.
 - Approval card for commands: Allow once / Always for this run / Deny.
 - Review screen: files → hunks; Accept all / per file / per hunk; Apply / Discard; test results; "results may be out of date" note when hunks are rejected.
@@ -378,7 +382,7 @@ Dates assume starting **6 November** and finishing on **19 November**, with 20 N
 ### Phase 4: Context assembly — Task B (13–14 Nov)
 
 **Build**
-- Repo map: tree-sitter for Python, ranking by how much each name is used, packed to 10% of the window (with min/max).
+- Repo map: tree-sitter for Python and JS/TS, ranking by how much each name is used, packed to 10% of the window (with min/max).
 - Map cache in Moon's folder outside the project; refresh only changed files.
 - AGENTS.md / CLAUDE.md read if present.
 - Map put into the session automatically at the start of agent mode.

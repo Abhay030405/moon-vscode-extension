@@ -149,7 +149,7 @@ TrueForge model names may only use lowercase letters, digits and hyphens, so a m
 | Provider name | Type | Values |
 |---|---|---|
 | `anthropic` | Anthropic | API key = `ANTHROPIC_API_KEY`; model `claude-sonnet-5-5` |
-| `azure-deepseek` | Custom (OpenAI-compatible) | Base URL = `AZURE_FOUNDRY_ENDPOINT`, API key = `AZURE_FOUNDRY_API_KEY`; model id = `AZURE_FOUNDRY_MODEL`, name `deepseek-v4-1-flash-2`, context length 128000, max output 8192 |
+| `azure-deepseek` | Custom (OpenAI-compatible) | Base URL = `AZURE_FOUNDRY_ENDPOINT`, API key = `AZURE_FOUNDRY_API_KEY`; model id = `AZURE_FOUNDRY_MODEL`, name `deepseek-v4-1-flash-2`, context length 1048576, max output 65536 |
 
 ### 5. Load the agent definitions
 
