@@ -53,18 +53,6 @@ export const MoonConfigSchema = z
     tools: z.strictObject({
       searchMaxResults: positiveInt,
     }),
-    flask: z.strictObject({
-      repoUrl: z.string().url(),
-      tag: z.string().min(1),
-      /** Commit the tag must point to (a prefix is enough). */
-      commit: z.string().min(7),
-      /** Where to clone, relative to the Moon repo root. */
-      dir: z.string().min(1),
-      /** Python packages installed next to Flask so its tests run (Flask's "tests" group). */
-      testRequirements: z.array(z.string().min(1)).min(1),
-      /** Paths hidden from Flask's `git status` via .git/info/exclude (never committed). */
-      localIgnores: z.array(z.string().min(1)),
-    }),
   })
   .refine((c) => c.context.mapBudgetMinTokens <= c.context.mapBudgetMaxTokens, {
     message: "mapBudgetMinTokens must not be larger than mapBudgetMaxTokens",

@@ -3,7 +3,7 @@ start-trueforge.ps1: start TrueForge in local mode with the settings from config
 
   - Checks Node.js is new enough (version from "engines.node" in package.json).
   - Sets OUTBOUND_URL_ALLOWED_HOSTS so TrueForge may call Moon's MCP server on localhost
-    (TrueForge blocks localhost by default).
+    (blocked by default) and our own provider endpoints (see scripts/lib/allowed-hosts.mjs).
   - Runs npx @truefoundry/trueforge@<trueforge.version> --port <trueforge.port>.
 
 Usage (from anywhere):
@@ -38,10 +38,13 @@ if ($current -lt $required) {
 $config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
 $tf = $config.trueforge
 
-$env:OUTBOUND_URL_ALLOWED_HOSTS = ConvertTo-Json -InputObject @($tf.allowedOutboundHosts) -Compress
+# Local hosts from config/moon.json + the hosts of our provider endpoints (config/trueforge.json + .env).
+$allowed = node (Join-Path $PSScriptRoot "lib/allowed-hosts.mjs")
+if ($LASTEXITCODE -ne 0) { exit 1 }
+$env:OUTBOUND_URL_ALLOWED_HOSTS = $allowed
 
 Write-Host "Starting TrueForge $($tf.version) on port $($tf.port)"
-Write-Host "OUTBOUND_URL_ALLOWED_HOSTS=$env:OUTBOUND_URL_ALLOWED_HOSTS"
+Write-Host "Allowed outbound hosts: $(($env:OUTBOUND_URL_ALLOWED_HOSTS | ConvertFrom-Json).Count)"
 Write-Host "Open $($tf.baseUrl) once it is up. Press Ctrl+C to stop."
 
 & npx --yes "@truefoundry/trueforge@$($tf.version)" --port $tf.port

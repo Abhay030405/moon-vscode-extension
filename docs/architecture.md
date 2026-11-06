@@ -78,7 +78,7 @@ moon/
 ├── scripts/
 │   ├── start-trueforge.ps1       Windows: sets OUTBOUND_URL_ALLOWED_HOSTS, starts TrueForge
 │   ├── start-trueforge.sh        macOS/Linux: same
-│   ├── setup-flask.ps1 / .sh     clones pallets/flask and checks out tag 3.1.3 (commit 22d92470)
+│   ├── setup-test-repo.ps1 / .sh clones the test repos in config/test-repos.json (Flask 3.1.3 for the fixed tasks)
 │   └── hanging-server            tiny test server that accepts a connection and never answers (Task C eval)
 │
 ├── packages/
@@ -299,7 +299,7 @@ Dates assume starting **6 November** and finishing on **19 November**, with 20 N
 
 **Build**
 - Monorepo skeleton (section 2), Apache-2.0 licence, NOTICE.md, .gitignore.
-- `scripts/start-trueforge` (sets `OUTBOUND_URL_ALLOWED_HOSTS`) and `scripts/setup-flask`.
+- `scripts/start-trueforge` (sets `OUTBOUND_URL_ALLOWED_HOSTS`) and `scripts/setup-test-repo`.
 - `config/*.example.json`.
 - Extension starts, reads settings, shows "Moon: connected to TrueForge (N models)" in the status bar.
 - A command "Moon: Check setup" that lists models from TrueForge and their window sizes.

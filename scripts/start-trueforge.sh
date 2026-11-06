@@ -3,7 +3,7 @@
 #
 #   - Checks Node.js is new enough (version from "engines.node" in package.json).
 #   - Sets OUTBOUND_URL_ALLOWED_HOSTS so TrueForge may call Moon's MCP server on localhost
-#     (TrueForge blocks localhost by default).
+#     (blocked by default) and our own provider endpoints (see scripts/lib/allowed-hosts.mjs).
 #   - Runs npx @truefoundry/trueforge@<trueforge.version> --port <trueforge.port>.
 #
 # Usage (from anywhere):  sh scripts/start-trueforge.sh
@@ -48,11 +48,12 @@ cfg() {
 VERSION=$(cfg trueforge.version)
 PORT=$(cfg trueforge.port)
 BASE_URL=$(cfg trueforge.baseUrl)
-OUTBOUND_URL_ALLOWED_HOSTS=$(cfg trueforge.allowedOutboundHosts)
+# Local hosts from config/moon.json + the hosts of our provider endpoints (config/trueforge.json + .env).
+OUTBOUND_URL_ALLOWED_HOSTS=$(node "$ROOT/scripts/lib/allowed-hosts.mjs")
 export OUTBOUND_URL_ALLOWED_HOSTS
 
 echo "Starting TrueForge $VERSION on port $PORT"
-echo "OUTBOUND_URL_ALLOWED_HOSTS=$OUTBOUND_URL_ALLOWED_HOSTS"
+echo "Allowed outbound hosts: $(node -p "JSON.parse(process.argv[1]).length" "$OUTBOUND_URL_ALLOWED_HOSTS")"
 echo "Open $BASE_URL once it is up. Press Ctrl+C to stop."
 
 exec npx --yes "@truefoundry/trueforge@$VERSION" --port "$PORT"

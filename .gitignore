@@ -16,14 +16,15 @@ packages/evals/results/*
 # Local config and secrets (only *.example.json is committed)
 config/*.json
 !config/*.example.json
+!config/test-repos.json
 .env
 .env.*
 !.env.example
 *.pem
 *.key
 
-# Test checkouts (setup-flask script)
-flask/
+# Test repositories cloned by scripts/setup-test-repo (not part of Moon)
+test-repos/
 
 # Logs and coverage
 *.log
