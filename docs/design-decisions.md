@@ -59,7 +59,9 @@ Last updated: 5 November 2026
   - search does not find duplicate files
 - **Plain folder copy, not git worktree** (a worktree misses uncommitted changes). Skip heavy folders like `.git`, `venv`, `node_modules`.
 - The agent reads, writes and runs tests **only inside the copy**. No approval pauses for writes during the run.
-- When running Python/tests in the copy, point Python at the **copy's `src` folder first**. Otherwise Flask may load from the original folder (editable install) and the tests check the wrong code. **Test this early.**
+- **Moon works on any project in any language**; nothing in Moon's code is specific to one language or to Flask (updated 6 Nov).
+- Every command runs **with the copy as its working folder**. Project-specific needs are **settings, not code**: Moon's config can add environment variables for commands run in the copy (for example `PYTHONPATH=src`, or a `PATH` entry for a local tool), with `{copy}` standing for the copy's folder.
+- Known case to cover with such a setting: Python projects installed in "editable" mode (like our Flask test setup) may import from the **original** folder instead of the copy, so tests would check the wrong code. Two safeguards: (1) the setting above points imports at the copy; (2) after running tests, Moon checks the run actually used the copy (for example a file path in the test output) and warns if not. **Test this early, on Flask.**
 - The copy is **deleted** after review finishes or after cancel.
 - Give the agent a small tool: **"list my pending changes"**, so it can re-check what it changed instead of trusting its memory (useful after compaction).
 
@@ -129,7 +131,7 @@ Last updated: 5 November 2026
 
 **Decided**
 - The project map uses **tree-sitter**. Reuse the existing rule files from Aider or Cline, keeping their licence and credit.
-- **Python first** (the tested language), then **JS/TS, Java, Go**.
+- **Python and JS/TS in the main build** (Phase 4): Python because the judged tasks use it, JS/TS because it is the most common language people will try Moon on. **Java and Go** next (stretch). Each language is a grammar + rule file, not new logic (updated 6 Nov).
 - Any other language: fall back to the file list + search tools (Moon still works, with a thinner map).
 - Search, read and run-command tools already work for every language.
 - VS Code's own symbol list (from installed language extensions) is **not** the main path: it depends on the user's extensions and can be slow.
@@ -199,7 +201,11 @@ Task C: the organisers break the model (unreachable address or invalid key) and 
 - "Files unchanged" is already guaranteed: inline edit is preview-only and agent mode works in the hidden copy.
 - **Models available:**
   - Claude, direct from Anthropic (~$100 credit)
-  - DeepSeek V4.1 Flash via Azure AI Foundry (backup)
+  - DeepSeek V4.1 Flash via Azure AI Foundry (backup), deployment `DeepSeek-V4.1-Flash-2`
+- **Azure facts, checked on our deployment (6 Nov):**
+  - Context window **1,048,576 tokens** (from Azure's own error message). Output has **no separate cap**: input and output share that window (a request allowing 1,048,000 output tokens was accepted).
+  - So TrueForge's "max output" for this model is set to **65,536**, not the full window: if the requested output equals the window, any input pushes the total over the limit and Azure rejects the call.
+  - Azure lists **DeepSeek-V4.1-Flash as "preview", retiring 15 Dec 2026**, one day before Round 2 (16–18 Dec). See open items.
 - **Handle each kind of failure differently:**
   - Wrong API key / model not found → switch to the backup **immediately** (retrying can't fix it)
   - Server unreachable / server error → switch right away (TrueForge has already retried twice); no reply at all → Moon's 10–12 s watchdog, then switch
@@ -366,8 +372,22 @@ Task C: the organisers break the model (unreachable address or invalid key) and 
 4. Test while building: how long a paused (waiting for approval) turn can wait.
 5. (done) Code Mode: not used (needs the sandbox; not on Windows).
 6. (done) Errors captured: wrong key `... (401): invalid x-api-key`; unreachable `Cannot connect to API:` in under 1 second.
-7. Models: Anthropic key confirmed; Azure AI Foundry (DeepSeek V4.1 Flash) key and endpoint still to confirm.
+7. (done) Models: both providers registered in TrueForge by `scripts/setup-providers` (Anthropic `claude-sonnet-5-5`, Azure `deepseek-v4-1-flash-2`); Azure limits confirmed (section 6).
 8. (done) UI: Moon builds its own panel; the TrueForge chat UI kit is not used.
 9. (done) MCP tools and map storage decided (section 9). The agent's written instructions: drafted during building.
 10. (done) TrueForge running locally, model added; chat, streaming, cancel, wrong-key and unreachable tests done.
 11. (done) Architecture, folder structure and build plan: see `moon-architecture-and-build-plan.md`.
+12. **Azure model retirement:** `DeepSeek-V4.1-Flash` (preview) retires on **15 Dec 2026**, before Round 2. Before the finals, move the backup to a model that stays available (for example `DeepSeek-V4-Flash`, generally available until Feb 2028, or `DeepSeek-V4.1-Flash-1017`, preview until Mar 2027). Only `.env` and `config/moon.json` change; no code. Also confirm in the Azure portal which base model the `DeepSeek-V4.1-Flash-2` deployment uses.
+13. **Pin the TrueForge version before recording the demo.** `trueforge.version` is `latest` while building; set it to the exact version we tested (0.184.1 today) before recording and submitting, so a TrueForge release on the last day can't break the demo or the judges' setup.
+14. Confirm while building the TrueForge client: sessions refer to a model as `provider/name` (for example `azure-deepseek/deepseek-v4-1-flash-2`).
+15. **Test projects in more languages:** add at least one small JS/TS repo to `config/test-repos.json` with a few retrieval scenarios, so "works on any language" is checked, not just claimed.
+
+---
+
+## 11. Setup facts learned while building (6 Nov)
+
+- **TrueForge does not read provider keys from environment variables.** Providers live in TrueForge's own settings. `scripts/setup-providers` writes them through TrueForge's local API (`PUT /api/v1/settings/model-providers`), using `config/trueforge.json` (which providers and models) and `.env` (keys, endpoint, model id). It only talks to TrueForge, never to a model provider.
+- **TrueForge names** (providers and models) may only use lowercase letters, digits and hyphens, so the Azure deployment `DeepSeek-V4.1-Flash-2` is registered as `deepseek-v4-1-flash-2`. Well-known providers are named by their type (`anthropic`); custom ones choose a name (`azure-deepseek`).
+- **TrueForge's network guard can block cloud endpoints too**, not only localhost: on some networks DNS also returns a NAT64 (`64:ff9b::`) address, which the guard treats as private. `scripts/start-trueforge` therefore allows localhost **plus the hosts of our own provider endpoints** (read from `.env`).
+- **Test projects are data, not code.** `config/test-repos.json` lists the repositories used to test Moon (Flask 3.1.3 for the fixed tasks first), each with its exact commit and its own setup commands; `scripts/setup-test-repo` prepares them in `test-repos/` (git-ignored). Moon's own config knows nothing about them.
+- TrueForge needs **Node.js 22.14+**.
