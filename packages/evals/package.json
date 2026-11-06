@@ -1,0 +1,8 @@
+{
+  "name": "@moon/evals",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Evaluation harness, run against the real TrueForge. Set up in later phases.",
+  "license": "Apache-2.0",
+  "type": "module"
+}

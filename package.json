@@ -1,4 +1,21 @@
 {
-  "name": "moon",
-  "private": true
+  "name": "moon-monorepo",
+  "private": true,
+  "description": "Moon: a VS Code coding agent whose agent loop runs on TrueForge.",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@12.14.0",
+  "engines": {
+    "node": ">=22.14"
+  },
+  "scripts": {
+    "build": "pnpm -r run build",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm -r run test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
 }
