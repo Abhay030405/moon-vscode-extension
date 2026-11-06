@@ -196,7 +196,7 @@ describe("MCP server", () => {
         ["find_definition", true],
         ["read_file", false],
       ]);
-      expect(events[0]!.summary).toBe("finding definition of get_flag");
+      expect(events[0]!.summary).toBe("Find definition get_flag");
     } finally {
       await client.close();
       await server.close();

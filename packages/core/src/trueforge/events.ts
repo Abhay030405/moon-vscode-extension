@@ -8,14 +8,15 @@
 import { mergeEventDelta, type TrueForgeApi } from "@truefoundry/trueforge-sdk";
 import { MAIN_THREAD_ID } from "../shared/constants.js";
 import { MOON_TOOLS } from "../tools/registry.js";
+import type { ToolStep } from "../tools/tool.js";
 
 export type MoonEvent =
   /** The session exists; `url` opens it in TrueForge's UI. */
   | { type: "session"; sessionId: string; url: string; model: string }
   /** A piece of the answer (main agent only). */
   | { type: "text"; text: string }
-  /** The agent called a tool. `summary` is a short human line for the live log. */
-  | { type: "tool-call"; id: string; tool: string; summary: string; subagent: boolean }
+  /** The agent called a tool. `step` is how the live log shows it ("Read" + "src/app.py:1-80"). */
+  | { type: "tool-call"; id: string; tool: string; step: ToolStep; subagent: boolean }
   /** A tool call finished. */
   | { type: "tool-result"; id: string }
   /** Something worth a line in the live log (subagent started, context compacted, ...). */
@@ -77,19 +78,28 @@ export class TurnEventMapper {
       type: "tool-call" as const,
       id: call.id,
       tool: call.function.name,
-      summary: describeToolCall(call.toolInfo?.name ?? call.function.name, call.function.arguments),
+      step: describeToolCall(call.toolInfo?.name ?? call.function.name, call.function.arguments),
       subagent: message!.threadId !== MAIN_THREAD_ID,
     }));
   }
 }
 
-/** Short live-log line for a tool call, using the Moon tool's own describe() when it is ours. */
-export function describeToolCall(toolName: string, argumentsJson: string): string {
+/**
+ * Live-log step for a tool call, using the Moon tool's own describe() when it is ours.
+ * Other tools (TrueForge's own, e.g. list_tools) show their name as words: "List tools".
+ */
+export function describeToolCall(toolName: string, argumentsJson: string): ToolStep {
   const tool = MOON_TOOLS.find((t) => t.name === toolName);
-  if (!tool) return toolName;
+  const fallback = { action: humanize(toolName), target: "" };
+  if (!tool) return fallback;
   try {
     return tool.describe(JSON.parse(argumentsJson || "{}"));
   } catch {
-    return toolName;
+    return fallback;
   }
+}
+
+function humanize(name: string): string {
+  const words = name.replace(/[_-]+/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }

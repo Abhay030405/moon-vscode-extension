@@ -25,5 +25,5 @@ export const findDefinitionTool = defineTool({
     const result = searchLines(ctx, (line) => pattern.test(line));
     return ctx.capOutput(wrapUntrusted(`definitions of ${args.name}`, formatMatches(result, `definitions of ${args.name}`)));
   },
-  describe: (args) => `finding definition of ${args.name ?? ""}`,
+  describe: (args) => ({ action: "Find definition", target: args.name ?? "" }),
 });

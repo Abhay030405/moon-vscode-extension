@@ -32,5 +32,5 @@ export const searchTextTool = defineTool({
     const result = searchLines(ctx, (line) => pattern.test(line), { startRel: start.rel, fileFilter });
     return ctx.capOutput(wrapUntrusted(`search results for "${args.query}"`, formatMatches(result, "matches")));
   },
-  describe: (args) => `searching "${args.query ?? ""}"${args.path ? ` in ${args.path}` : ""}`,
+  describe: (args) => ({ action: "Search", target: `"${args.query ?? ""}"${args.path ? ` in ${args.path}` : ""}` }),
 });

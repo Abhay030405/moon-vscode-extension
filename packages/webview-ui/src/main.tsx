@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { PanelErrorBoundary } from "./notices/PanelErrorBoundary";
 import { postToExtension } from "./vscode-api";
+import "@fontsource-variable/inter";
+import "@fontsource-variable/jetbrains-mono";
 import "./styles/global.css";
 
 // Errors outside React's drawing (event handlers, promises) are reported too.

@@ -33,5 +33,5 @@ export const listFilesTool = defineTool({
     const note = truncated ? `\n[Only the first ${max} files shown. Use path or glob to narrow it.]` : "";
     return ctx.capOutput(wrapUntrusted(`file list: ${where}`, files.join("\n")) + note);
   },
-  describe: (args) => `listing ${args.path || "project"}${args.glob ? ` (${args.glob})` : ""}`,
+  describe: (args) => ({ action: "List", target: `${args.path || "."}${args.glob ? ` ${args.glob}` : ""}` }),
 });

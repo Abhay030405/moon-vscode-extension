@@ -1,13 +1,49 @@
-// Agent text, shown as written. `inline code` is styled; everything else is plain text
-// (React escapes it, so file content can never inject HTML into the panel).
+// Agent text rendered as Markdown (GitHub style: lists, tables, code blocks).
+// react-markdown builds React elements and never inserts raw HTML, so text quoted from the
+// user's files can't inject anything into the panel. Links open through the extension.
 
-export function AnswerText({ text }: { text: string }) {
-  const pieces = text.split(/(`[^`\n]+`)/g);
+import { useEffect, type ReactNode } from "react";
+import Markdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
+import type { TypingSettings } from "../protocol/messages";
+import { postToExtension } from "../vscode-api";
+import { useTypewriter } from "./use-typewriter";
+
+const CURSOR = "▍";
+
+const components: Components = {
+  a: ({ href, children }) => (
+    <a
+      href={href}
+      onClick={(e) => {
+        e.preventDefault();
+        if (href) postToExtension({ type: "open-link", url: href });
+      }}
+    >
+      {children}
+    </a>
+  ),
+  // Images are never loaded (the panel's security policy blocks them); show the alt text.
+  img: ({ alt }) => <span>{alt}</span>,
+};
+
+interface Props {
+  text: string;
+  typing: TypingSettings | undefined;
+  /** Called as more text appears, so the chat can keep the newest line in view. */
+  onGrow?(): void;
+}
+
+export function AnswerText({ text, typing, onGrow }: Props): ReactNode {
+  const shown = useTypewriter(text, typing);
+  const typingNow = shown < text.length;
+  useEffect(() => onGrow?.(), [shown, onGrow]);
+
   return (
     <div className="moon-answer">
-      {pieces.map((piece, i) =>
-        piece.length > 2 && piece.startsWith("`") && piece.endsWith("`") ? <code key={i}>{piece.slice(1, -1)}</code> : piece,
-      )}
+      <Markdown remarkPlugins={[remarkGfm]} components={components}>
+        {text.slice(0, shown) + (typingNow ? CURSOR : "")}
+      </Markdown>
     </div>
   );
 }
