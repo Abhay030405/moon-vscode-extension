@@ -107,7 +107,7 @@ cp config/trueforge.example.json config/trueforge.json
 ```
 
 - `config/trueforge.json`: the model providers TrueForge should know about (names, models, window sizes). Secrets are not stored here; it names the `.env` variables instead.
-- `config/moon.json`: Moon's settings: TrueForge version, URL and port, main and backup model, resilience timers, context budget, and tool limits. Moon checks this file on start and names any field that is wrong.
+- `config/moon.json`: Moon's settings: TrueForge version, URL and port, request timeout and how often the status bar re-checks TrueForge, main and backup model, resilience timers, context budget, and tool limits. Moon checks this file on start and names any field that is wrong.
 
 Real config files are git-ignored; only the `*.example.json` files are committed.
 
@@ -164,15 +164,21 @@ The agent definitions live in [`agents/`](agents/):
 
 Moon sends these to TrueForge itself when it creates a session, with the model taken from `config/moon.json`. You don't need to import them by hand.
 
-### 6. Build and run the extension *(planned)*
+### 6. Build and run the extension
 
 ```bash
 pnpm build
 ```
 
-Then open the `moon` folder in VS Code and press **F5** to launch an Extension Development Host with Moon loaded. On start, Moon checks that TrueForge is reachable and registers its MCP server with it.
+Open the `moon` folder in VS Code and press **F5** (launch configuration "Run Moon extension"). A second VS Code window opens with Moon loaded. Open a project in it, for example `test-repos/flask`.
 
-To install it as a normal extension instead:
+In that window:
+- The **status bar** (bottom left) shows **"Moon: connected to TrueForge (N models)"**. If TrueForge is stopped it shows **"Moon: TrueForge not reachable"**, and it updates by itself within `trueforge.statusCheckIntervalMs` when you start or stop TrueForge. A warning colour means something needs fixing (hover for the reason).
+- **Moon: Check setup** (Command Palette, or click the status bar) lists the models TrueForge has, with their window sizes, and whether Moon's main and backup models are among them. Details are written to the **Moon** output panel.
+
+Moon finds its config at `config/moon.json` in this repository. To use another file, set **`moon.configPath`** in VS Code settings to its full path.
+
+To install it as a normal extension instead *(planned)*:
 
 ```bash
 pnpm package                  # creates a .vsix file
