@@ -17,7 +17,7 @@ export async function runCheckSetup(
   );
   statusBar.show(result);
 
-  output.clear();
+  output.appendLine("");
   for (const line of formatReport(result)) output.appendLine(line);
 
   const { ok, summary } = summarize(result);

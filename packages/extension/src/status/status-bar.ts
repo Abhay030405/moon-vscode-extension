@@ -12,7 +12,12 @@ export class MoonStatusBar implements vscode.Disposable {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private disposed = false;
 
-  constructor(private readonly context: vscode.ExtensionContext) {
+  private lastText: string | undefined;
+
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly output: vscode.OutputChannel,
+  ) {
     this.item.command = CHECK_SETUP_COMMAND;
     this.item.text = "$(sync~spin) Moon: checking TrueForge…";
     this.item.show();
@@ -29,6 +34,16 @@ export class MoonStatusBar implements vscode.Disposable {
     this.item.text = text;
     this.item.tooltip = tooltip;
     this.item.backgroundColor = problem ? new vscode.ThemeColor("statusBarItem.warningBackground") : undefined;
+    this.logChange(text, tooltip);
+  }
+
+  /** Writes status changes (not every poll) to the Moon output panel. */
+  private logChange(text: string, detail: string): void {
+    if (text === this.lastText) return;
+    this.lastText = text;
+    const plain = text.replace(/\$\([^)]*\)\s*/g, "");
+    const firstLine = detail.split("\n")[0];
+    this.output.appendLine(`[${new Date().toLocaleTimeString()}] ${plain} | ${firstLine}`);
   }
 
   private async refresh(): Promise<void> {
@@ -41,6 +56,7 @@ export class MoonStatusBar implements vscode.Disposable {
     } catch (err) {
       this.item.text = "$(error) Moon: status check failed";
       this.item.tooltip = (err as Error).message;
+      this.logChange(this.item.text, this.item.tooltip);
     }
     if (!this.disposed) this.timer = setTimeout(() => void this.refresh(), nextCheckMs);
   }
