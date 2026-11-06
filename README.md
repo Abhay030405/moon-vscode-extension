@@ -107,7 +107,7 @@ cp config/trueforge.example.json config/trueforge.json
 ```
 
 - `config/trueforge.json`: the model providers TrueForge should know about (names, models, window sizes). Secrets are not stored here; it names the `.env` variables instead.
-- `config/moon.json`: Moon's settings: TrueForge version, URL and port, main and backup model, resilience timers, context budget, tool limits, and the Flask checkout used for the demo tasks. Moon checks this file on start and names any field that is wrong.
+- `config/moon.json`: Moon's settings: TrueForge version, URL and port, main and backup model, resilience timers, context budget, and tool limits. Moon checks this file on start and names any field that is wrong.
 
 Real config files are git-ignored; only the `*.example.json` files are committed.
 
@@ -128,14 +128,28 @@ TrueForge then runs at `http://localhost:8790` (chat UI and sessions there, API 
 
 ### 4b. Add the model providers in TrueForge
 
-TrueForge keeps its model providers in its own settings (it does not read keys from environment variables). Open `http://localhost:8790` → settings → model providers, and add the two providers listed in `config/trueforge.json`:
+TrueForge keeps its model providers in its own settings (it does not read keys from environment variables). With TrueForge running, open a second terminal and run:
+
+```bash
+# Windows
+powershell -ExecutionPolicy Bypass -File scripts/setup-providers.ps1
+
+# macOS / Linux
+sh scripts/setup-providers.sh
+```
+
+The script reads the providers from `config/trueforge.json` and the keys, endpoint and model id from `.env`, then creates or updates them through TrueForge's local API (`PUT /api/v1/settings/model-providers`). It only talks to TrueForge, never to a model provider. It never prints key values, and it is safe to run again (for example after rotating a key). At the end it lists the providers in TrueForge with their `provider/model` names.
+
+TrueForge model names may only use lowercase letters, digits and hyphens, so a model id like `DeepSeek-V4.1-Flash-2` is registered under the name `deepseek-v4-1-flash-2`. Use the printed `provider/model` names in `models.main` and `models.backup` in `config/moon.json`.
+
+**About "Outbound URL blocked for host …":** TrueForge's network guard refuses hosts that resolve to private addresses. Some networks' DNS also returns a NAT64 (`64:ff9b::`) IPv6 address for cloud endpoints such as Azure, which trips the guard. `scripts/start-trueforge` already allows the hosts of the endpoints in `config/trueforge.json`, so this should not happen when TrueForge was started with it. If it still does, add the host to `trueforge.allowedOutboundHosts` in `config/moon.json` and restart TrueForge.
+
+**Manual fallback:** open `http://localhost:8790` → settings → model providers and add:
 
 | Provider name | Type | Values |
 |---|---|---|
 | `anthropic` | Anthropic | API key = `ANTHROPIC_API_KEY`; model `claude-sonnet-5-5` |
-| `azure-deepseek` | Custom (OpenAI-compatible) | Base URL = `AZURE_FOUNDRY_ENDPOINT`, API key = `AZURE_FOUNDRY_API_KEY`; model = `AZURE_FOUNDRY_MODEL`, context length 128000, max output 8192 |
-
-The provider and model names must match `models.main` and `models.backup` in `config/moon.json`.
+| `azure-deepseek` | Custom (OpenAI-compatible) | Base URL = `AZURE_FOUNDRY_ENDPOINT`, API key = `AZURE_FOUNDRY_API_KEY`; model id = `AZURE_FOUNDRY_MODEL`, name `deepseek-v4-1-flash-2`, context length 128000, max output 8192 |
 
 ### 5. Load the agent definitions
 
@@ -175,18 +189,20 @@ code --install-extension packages/extension/moon-*.vsix
 
 ---
 
-## Trying it on the competition repository
+## Test repositories
 
-The three fixed tasks run on `pallets/flask`, tag `3.1.3` (commit `22d92470`):
+Moon works on **any project in any language**: open a folder in VS Code and use it. For testing Moon itself (the demo tasks and evals), the repositories we test against are listed in [`config/test-repos.json`](config/test-repos.json), each with its exact commit and its own setup commands. Add an entry there to test on another project or language.
+
+The competition's three fixed tasks run on `pallets/flask`, tag `3.1.3` (commit `22d92470`), which is the first entry:
 
 ```bash
 # Windows
-powershell -ExecutionPolicy Bypass -File scripts/setup-flask.ps1
+powershell -ExecutionPolicy Bypass -File scripts/setup-test-repo.ps1 -Name flask
 # macOS / Linux
-sh scripts/setup-flask.sh
+sh scripts/setup-test-repo.sh flask
 ```
 
-The script clones Flask into `flask/` (git-ignored, set by `flask.dir`), checks out the tag and confirms the commit, creates `flask/.venv` and installs Flask with its test requirements. The venv and test cache are hidden from Flask's `git status` (through `.git/info/exclude`), so `git status` stays clean for Task C. Add `-SkipInstall` / `--skip-install` to only check out the code.
+The script clones each repo into `test-repos/` (git-ignored), checks out the pinned ref and confirms the commit, then runs that repo's setup commands (for Flask: a `.venv` with Flask and its test requirements). Local-only files such as the venv are hidden from the repo's `git status` (through `.git/info/exclude`), so `git status` stays clean for Task C. Leave out the name to set up every repo; add `-SkipSetup` / `--skip-setup` to only check out the code. Then open `test-repos/flask` in VS Code.
 
 | Task | Instruction | Check |
 |---|---|---|
@@ -214,7 +230,7 @@ Eval results are written to `packages/evals/results/` (git-ignored) as JSON plus
 moon/
 ├── agents/            agent definitions and prompts (loaded into TrueForge)
 ├── config/            example config files (no keys)
-├── scripts/           start TrueForge, set up the Flask checkout, test helpers
+├── scripts/           start TrueForge, set up test repositories, test helpers
 ├── packages/
 │   ├── core/          all logic; never imports VS Code (TrueForge client, context, hidden copy, tools, safety)
 │   ├── extension/     thin VS Code layer: inline edit, agent run, review, status bar
