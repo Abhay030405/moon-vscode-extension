@@ -1,0 +1,211 @@
+/*
+ * Moon panel styles. Every colour, size and spacing value lives in the variables below,
+ * based on VS Code's theme variables (--vscode-*), so the panel follows the user's
+ * light/dark/high-contrast theme. Rules further down use only var(--...).
+ */
+
+:root {
+  /* Colours */
+  --moon-fg: var(--vscode-foreground);
+  --moon-fg-muted: var(--vscode-descriptionForeground);
+  --moon-bg: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  --moon-border: var(--vscode-panel-border, var(--vscode-widget-border, transparent));
+  --moon-user-bg: var(--vscode-editor-inactiveSelectionBackground);
+  --moon-input-fg: var(--vscode-input-foreground);
+  --moon-input-bg: var(--vscode-input-background);
+  --moon-input-border: var(--vscode-input-border, var(--vscode-widget-border, transparent));
+  --moon-focus: var(--vscode-focusBorder);
+  --moon-button-fg: var(--vscode-button-foreground);
+  --moon-button-bg: var(--vscode-button-background);
+  --moon-button-hover-bg: var(--vscode-button-hoverBackground);
+  --moon-button2-fg: var(--vscode-button-secondaryForeground);
+  --moon-button2-bg: var(--vscode-button-secondaryBackground);
+  --moon-button2-hover-bg: var(--vscode-button-secondaryHoverBackground);
+  --moon-link: var(--vscode-textLink-foreground);
+  --moon-code-bg: var(--vscode-textCodeBlock-background);
+  --moon-ok: var(--vscode-testing-iconPassed, var(--vscode-charts-green));
+  --moon-warn: var(--vscode-editorWarning-foreground);
+  --moon-error: var(--vscode-errorForeground);
+
+  /* Typography */
+  --moon-font: var(--vscode-font-family);
+  --moon-font-size: var(--vscode-font-size);
+  --moon-font-size-small: calc(var(--vscode-font-size) * 0.9);
+  --moon-mono: var(--vscode-editor-font-family);
+  --moon-line-height: 1.5;
+
+  /* Spacing and shapes */
+  --moon-space-xs: 2px;
+  --moon-space-s: 4px;
+  --moon-space-m: 8px;
+  --moon-space-l: 12px;
+  --moon-radius: 4px;
+  --moon-border-width: 1px;
+  --moon-composer-min-rows-height: 60px;
+  --moon-composer-max-height: 200px;
+  --moon-z-composer: 1;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  color: var(--moon-fg);
+  background: var(--moon-bg);
+  font-family: var(--moon-font);
+  font-size: var(--moon-font-size);
+  line-height: var(--moon-line-height);
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border: none;
+  border-radius: var(--moon-radius);
+  padding: var(--moon-space-s) var(--moon-space-l);
+  color: var(--moon-button-fg);
+  background: var(--moon-button-bg);
+}
+button:hover:not(:disabled) {
+  background: var(--moon-button-hover-bg);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+button.secondary {
+  color: var(--moon-button2-fg);
+  background: var(--moon-button2-bg);
+}
+button.secondary:hover:not(:disabled) {
+  background: var(--moon-button2-hover-bg);
+}
+button.link {
+  padding: 0;
+  color: var(--moon-link);
+  background: none;
+  text-decoration: underline;
+}
+button:focus-visible,
+textarea:focus-visible {
+  outline: var(--moon-border-width) solid var(--moon-focus);
+  outline-offset: calc(var(--moon-border-width) * -1);
+}
+
+/* Layout */
+.moon-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+.moon-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--moon-space-m);
+  padding: var(--moon-space-s) var(--moon-space-m);
+  border-bottom: var(--moon-border-width) solid var(--moon-border);
+  color: var(--moon-fg-muted);
+  font-size: var(--moon-font-size-small);
+}
+.moon-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--moon-space-m);
+  display: flex;
+  flex-direction: column;
+  gap: var(--moon-space-l);
+}
+.moon-empty {
+  color: var(--moon-fg-muted);
+  padding: var(--moon-space-l) var(--moon-space-s);
+}
+
+/* Messages */
+.moon-message-user {
+  align-self: stretch;
+  padding: var(--moon-space-m);
+  border-radius: var(--moon-radius);
+  background: var(--moon-user-bg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.moon-message-agent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--moon-space-m);
+}
+.moon-answer {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.moon-answer code {
+  font-family: var(--moon-mono);
+  background: var(--moon-code-bg);
+  border-radius: var(--moon-radius);
+  padding: 0 var(--moon-space-xs);
+}
+
+/* Live log */
+.moon-log {
+  margin: 0;
+  padding: var(--moon-space-s) var(--moon-space-m);
+  list-style: none;
+  border-left: var(--moon-border-width) solid var(--moon-border);
+  color: var(--moon-fg-muted);
+  font-size: var(--moon-font-size-small);
+  font-family: var(--moon-mono);
+}
+.moon-log li {
+  display: flex;
+  gap: var(--moon-space-m);
+  overflow-wrap: anywhere;
+}
+.moon-log .running {
+  color: var(--moon-warn);
+}
+.moon-log .done {
+  color: var(--moon-ok);
+}
+
+/* Notices (stopped, error) */
+.moon-notice {
+  font-size: var(--moon-font-size-small);
+  color: var(--moon-fg-muted);
+}
+.moon-notice.error {
+  color: var(--moon-error);
+}
+
+/* Composer */
+.moon-composer {
+  z-index: var(--moon-z-composer);
+  display: flex;
+  flex-direction: column;
+  gap: var(--moon-space-s);
+  padding: var(--moon-space-m);
+  border-top: var(--moon-border-width) solid var(--moon-border);
+}
+.moon-composer textarea {
+  width: 100%;
+  min-height: var(--moon-composer-min-rows-height);
+  max-height: var(--moon-composer-max-height);
+  resize: vertical;
+  padding: var(--moon-space-s) var(--moon-space-m);
+  color: var(--moon-input-fg);
+  background: var(--moon-input-bg);
+  border: var(--moon-border-width) solid var(--moon-input-border);
+  border-radius: var(--moon-radius);
+  font: inherit;
+}
+.moon-composer-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--moon-space-m);
+  color: var(--moon-fg-muted);
+  font-size: var(--moon-font-size-small);
+}

@@ -31,10 +31,25 @@ export const MoonConfigSchema = z
       statusCheckIntervalMs: positiveInt,
       /** Local hosts TrueForge may still call (needed to reach Moon's MCP server). */
       allowedOutboundHosts: z.array(z.string().min(1)).min(1),
+      /** Link to a session in TrueForge's UI; {baseUrl} and {sessionId} are filled in. */
+      sessionUrlTemplate: z.string().min(1),
     }),
     models: z.strictObject({
       main: ModelRefSchema,
       backup: ModelRefSchema,
+    }),
+    mcp: z.strictObject({
+      /** Moon's MCP server (the editor's tools) listens here; TrueForge calls it. */
+      host: z.string().min(1),
+      /** 0 = pick any free port at start-up (Moon registers the real address with TrueForge). */
+      port: z.number().int().min(0).max(65535),
+      path: z.string().startsWith("/"),
+      /** Name the server is registered under in TrueForge (lowercase, digits, hyphens). */
+      serverName: z.string().regex(/^[a-z][a-z0-9-]*[a-z0-9]$/),
+    }),
+    agent: z.strictObject({
+      /** Agent definition for agent mode, relative to the Moon repo root. */
+      definitionFile: z.string().min(1),
     }),
     resilience: z.strictObject({
       /** No streamed event within this time after sending: cancel and switch to backup. */
@@ -59,7 +74,24 @@ export const MoonConfigSchema = z
       fallbackContextLength: positiveInt,
     }),
     tools: z.strictObject({
+      /** Most matches search_text / find_usages / find_definition return. */
       searchMaxResults: positiveInt,
+      /** Most paths list_files returns. */
+      listFilesMaxResults: positiveInt,
+      /** Most lines one read_file call returns. */
+      readFileMaxLines: positiveInt,
+      /** Files bigger than this are skipped by search and refused by read_file. */
+      maxFileBytes: positiveInt,
+      /** Hard cap on the text of any single tool result. */
+      maxOutputChars: positiveInt,
+      /** Folder names never listed or searched (anywhere in the tree). */
+      ignoredDirs: z.array(z.string().min(1)),
+    }),
+    safety: z.strictObject({
+      /** Files the tools never read, list or search (globs, relative to the project root). */
+      secretFileGlobs: z.array(z.string().min(1)),
+      /** Files matching a secret glob that are still allowed (e.g. .env.example). */
+      secretFileExceptions: z.array(z.string().min(1)),
     }),
   })
   .refine((c) => c.context.mapBudgetMinTokens <= c.context.mapBudgetMaxTokens, {
