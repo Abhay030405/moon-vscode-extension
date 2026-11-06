@@ -16,7 +16,9 @@ export type PanelToExtension =
   /** The user started a new chat (the old one is stopped if it was running). */
   | { type: "new-chat"; chatId: string }
   /** Open the TrueForge session page in the browser. */
-  | { type: "open-session"; url: string };
+  | { type: "open-session"; url: string }
+  /** The panel hit an error; the extension writes it to the Moon output channel. */
+  | { type: "panel-error"; message: string };
 
 /** Extension -> panel. */
 export type ExtensionToPanel =

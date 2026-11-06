@@ -7,8 +7,12 @@ import { AnswerText } from "./AnswerText";
 import type { Entry } from "./chat-state";
 
 export function ChatView({ entries }: { entries: Entry[] }) {
-  const end = useRef<HTMLDivElement>(null);
-  useEffect(() => end.current?.scrollIntoView({ block: "end" }), [entries]);
+  // Keep the newest text in view by scrolling only the message list (never the whole page).
+  const list = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = list.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [entries]);
 
   if (entries.length === 0) {
     return (
@@ -20,7 +24,7 @@ export function ChatView({ entries }: { entries: Entry[] }) {
     );
   }
   return (
-    <div className="moon-messages" aria-live="polite">
+    <div className="moon-messages" aria-live="polite" ref={list}>
       {entries.map((entry, i) =>
         entry.kind === "user" ? (
           <div key={i} className="moon-message-user">
@@ -36,7 +40,6 @@ export function ChatView({ entries }: { entries: Entry[] }) {
           </div>
         ),
       )}
-      <div ref={end} />
     </div>
   );
 }

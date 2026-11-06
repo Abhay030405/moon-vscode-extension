@@ -11,7 +11,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel("Moon");
   const statusBar = new MoonStatusBar(context, output);
   const service = new MoonService(context, output);
-  const panel = new MoonPanelProvider(context.extensionUri, service);
+  const panel = new MoonPanelProvider(context.extensionUri, service, output);
 
   context.subscriptions.push(
     output,

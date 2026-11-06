@@ -18,6 +18,7 @@ export class MoonPanelProvider implements vscode.WebviewViewProvider, vscode.Dis
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly service: MoonService,
+    private readonly output: vscode.OutputChannel,
   ) {
     this.disposables.push(vscode.workspace.onDidChangeWorkspaceFolders(() => this.postState()));
   }
@@ -45,6 +46,9 @@ export class MoonPanelProvider implements vscode.WebviewViewProvider, vscode.Dis
         return;
       case "open-session":
         if (/^https?:\/\//.test(message.url)) void vscode.env.openExternal(vscode.Uri.parse(message.url));
+        return;
+      case "panel-error":
+        this.output.appendLine(`[panel] error: ${message.message}`);
         return;
       case "send":
         await this.send(message.chatId, message.text);
