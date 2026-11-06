@@ -22,7 +22,7 @@ describe("TurnEventMapper", () => {
     const out = events.flatMap((e) => mapper.map(e));
     expect(out).toEqual([
       { type: "text", text: "Looking" },
-      { type: "tool-call", id: "t1", tool: "read_file", summary: "reading src/a.py:3", subagent: false },
+      { type: "tool-call", id: "t1", tool: "read_file", step: { action: "Read", target: "src/a.py:3" }, subagent: false },
       { type: "tool-result", id: "t1" },
       { type: "done", status: "done" },
     ]);

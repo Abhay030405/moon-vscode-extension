@@ -8,7 +8,7 @@ import { findUsagesTool } from "./find-usages.js";
 import { listFilesTool } from "./list-files.js";
 import { readFileTool } from "./read-file.js";
 import { searchTextTool } from "./search-text.js";
-import type { MoonTool } from "./tool.js";
+import { stepText, type MoonTool } from "./tool.js";
 
 /** Phase 1: read-only tools. Write and command tools are added in later phases. */
 export const MOON_TOOLS: MoonTool[] = [
@@ -64,7 +64,7 @@ export function registerMoonTools(
 
 function safeDescribe(tool: MoonTool, args: Record<string, unknown>): string {
   try {
-    return tool.describe(args as never);
+    return stepText(tool.describe(args as never));
   } catch {
     return tool.name;
   }

@@ -6,6 +6,8 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   plugins: [react()],
+  // Relative URLs: the webview serves these files from its own resource path, not a site root.
+  base: "./",
   build: {
     outDir: "../extension/dist/webview",
     emptyOutDir: true,
@@ -14,7 +16,8 @@ export default defineConfig({
       input: "src/main.tsx",
       output: {
         entryFileNames: "index.js",
-        assetFileNames: "index[extname]",
+        // index.css keeps a fixed name for the extension; images keep their own names.
+        assetFileNames: (asset) => (asset.names.some((n) => n.endsWith(".css")) ? "index[extname]" : "[name][extname]"),
         chunkFileNames: "[name].js",
       },
     },

@@ -48,6 +48,8 @@ export const readFileTool = defineTool({
     const more = end < total ? `\n[Lines ${end + 1}-${total} not shown. Call read_file with start_line=${end + 1} to continue.]` : "";
     return ctx.capOutput(`${rel} (lines ${start}-${end} of ${total})\n${wrapUntrusted(rel, body)}${more}`);
   },
-  describe: (args) =>
-    `reading ${args.path ?? ""}${args.start_line ? `:${args.start_line}${args.end_line ? `-${args.end_line}` : ""}` : ""}`,
+  describe: (args) => ({
+    action: "Read",
+    target: `${args.path ?? ""}${args.start_line ? `:${args.start_line}${args.end_line ? `-${args.end_line}` : ""}` : ""}`,
+  }),
 });

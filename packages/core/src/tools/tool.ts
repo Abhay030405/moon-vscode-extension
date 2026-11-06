@@ -16,9 +16,18 @@ export interface MoonTool<Shape extends z.ZodRawShape = z.ZodRawShape> {
   readOnly: boolean;
   /** Runs the tool. Returns the text the agent sees; throws ToolError for clear failures. */
   run(ctx: ToolContext, args: z.infer<z.ZodObject<Shape>>): string | Promise<string>;
-  /** Short line for Moon's live log, e.g. `reading src/app.py:1-80`. */
-  describe(args: Partial<z.infer<z.ZodObject<Shape>>>): string;
+  /** One step for Moon's live log, e.g. { action: "Read", target: "src/app.py:1-80" }. */
+  describe(args: Partial<z.infer<z.ZodObject<Shape>>>): ToolStep;
 }
+
+/** A tool call as shown in the live log: a verb, and what it acted on. */
+export interface ToolStep {
+  action: string;
+  target: string;
+}
+
+/** The step as one line of text, e.g. for the output channel. */
+export const stepText = (step: ToolStep): string => (step.target ? `${step.action} ${step.target}` : step.action);
 
 /** Helper that keeps the generic type of `tool` while checking its shape. */
 export function defineTool<Shape extends z.ZodRawShape>(tool: MoonTool<Shape>): MoonTool<Shape> {

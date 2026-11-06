@@ -93,6 +93,12 @@ export const MoonConfigSchema = z
       /** Files matching a secret glob that are still allowed (e.g. .env.example). */
       secretFileExceptions: z.array(z.string().min(1)),
     }),
+    ui: z.strictObject({
+      /** Steady speed the panel reveals streamed answer text at (characters per second). */
+      typingCharsPerSecond: positiveInt,
+      /** The panel speeds up so it is never more than this far behind the real stream. */
+      typingMaxLagMs: positiveInt,
+    }),
   })
   .refine((c) => c.context.mapBudgetMinTokens <= c.context.mapBudgetMaxTokens, {
     message: "mapBudgetMinTokens must not be larger than mapBudgetMaxTokens",

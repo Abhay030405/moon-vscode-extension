@@ -45,6 +45,7 @@ export class MoonPanelProvider implements vscode.WebviewViewProvider, vscode.Dis
         if (this.chat?.id === message.chatId) this.chat.agent?.stop();
         return;
       case "open-session":
+      case "open-link":
         if (/^https?:\/\//.test(message.url)) void vscode.env.openExternal(vscode.Uri.parse(message.url));
         return;
       case "panel-error":
@@ -76,7 +77,11 @@ export class MoonPanelProvider implements vscode.WebviewViewProvider, vscode.Dis
 
   private postState(): void {
     const root = this.service.projectRoot();
-    this.post({ type: "state", projectName: root ? vscode.workspace.workspaceFolders?.[0]?.name : undefined });
+    this.post({
+      type: "state",
+      projectName: root ? vscode.workspace.workspaceFolders?.[0]?.name : undefined,
+      ...this.service.panelSettings(),
+    });
   }
 
   private post(message: ExtensionToPanel): void {
@@ -90,6 +95,7 @@ export class MoonPanelProvider implements vscode.WebviewViewProvider, vscode.Dis
     const csp = [
       "default-src 'none'",
       `style-src ${webview.cspSource}`,
+      `img-src ${webview.cspSource}`,
       `font-src ${webview.cspSource}`,
       `script-src 'nonce-${nonce}'`,
     ].join("; ");

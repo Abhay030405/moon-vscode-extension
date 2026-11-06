@@ -1,49 +1,93 @@
 /*
- * Moon panel styles. Every colour, size and spacing value lives in the variables below,
- * based on VS Code's theme variables (--vscode-*), so the panel follows the user's
- * light/dark/high-contrast theme. Rules further down use only var(--...).
+ * Moon panel styles. Every colour, size and spacing value lives in the variables below.
+ * Surfaces and text come from VS Code's theme variables (--vscode-*), so the panel follows
+ * the user's light / dark / high-contrast theme. One quiet accent (lavender, darker in light
+ * themes, the theme's focus colour in high contrast) marks Moon's own elements.
+ * Flat on purpose: no glows, gradients or shadows. Rules below use only var(--...).
  */
 
 :root {
-  /* Colours */
+  /* Surfaces and text (from the VS Code theme) */
+  --moon-bg: var(--vscode-sideBar-background, var(--vscode-editor-background));
   --moon-fg: var(--vscode-foreground);
   --moon-fg-muted: var(--vscode-descriptionForeground);
-  --moon-bg: var(--vscode-sideBar-background, var(--vscode-editor-background));
-  --moon-border: var(--vscode-panel-border, var(--vscode-widget-border, transparent));
-  --moon-user-bg: var(--vscode-editor-inactiveSelectionBackground);
+  --moon-border: var(--vscode-widget-border, var(--vscode-panel-border, transparent));
+  --moon-surface: var(--vscode-input-background);
   --moon-input-fg: var(--vscode-input-foreground);
-  --moon-input-bg: var(--vscode-input-background);
-  --moon-input-border: var(--vscode-input-border, var(--vscode-widget-border, transparent));
-  --moon-focus: var(--vscode-focusBorder);
-  --moon-button-fg: var(--vscode-button-foreground);
-  --moon-button-bg: var(--vscode-button-background);
-  --moon-button-hover-bg: var(--vscode-button-hoverBackground);
-  --moon-button2-fg: var(--vscode-button-secondaryForeground);
-  --moon-button2-bg: var(--vscode-button-secondaryBackground);
-  --moon-button2-hover-bg: var(--vscode-button-secondaryHoverBackground);
-  --moon-link: var(--vscode-textLink-foreground);
+  --moon-placeholder: var(--vscode-input-placeholderForeground);
   --moon-code-bg: var(--vscode-textCodeBlock-background);
+  --moon-link: var(--vscode-textLink-foreground);
+  --moon-hover-bg: var(--vscode-toolbar-hoverBackground);
+  --moon-list-hover-bg: var(--vscode-list-hoverBackground);
   --moon-ok: var(--vscode-testing-iconPassed, var(--vscode-charts-green));
-  --moon-warn: var(--vscode-editorWarning-foreground);
   --moon-error: var(--vscode-errorForeground);
+  --moon-focus: var(--vscode-focusBorder);
+  --moon-timeline-line: var(--vscode-editorIndentGuide-background1, var(--vscode-editorIndentGuide-background, var(--moon-border)));
+  --moon-step-target: var(--vscode-textLink-foreground);
+  --moon-scrollbar: var(--vscode-scrollbarSlider-background);
+  --moon-scrollbar-accent: color-mix(in srgb, var(--moon-accent) 70%, transparent);
+
+  /* Accent (lavender from Moon's logo): dark-theme values, light and high contrast below */
+  --moon-accent: #aaa4ea;
+  --moon-accent-fg: #17162e;
 
   /* Typography */
-  --moon-font: var(--vscode-font-family);
+  /* Inter and JetBrains Mono ship with the panel (OFL-1.1, see NOTICE.md); VS Code's fonts are the fallback. */
+  --moon-font: "Inter Variable", var(--vscode-font-family), sans-serif;
   --moon-font-size: var(--vscode-font-size);
-  --moon-font-size-small: calc(var(--vscode-font-size) * 0.9);
-  --moon-mono: var(--vscode-editor-font-family);
-  --moon-line-height: 1.5;
+  --moon-font-size-small: calc(var(--vscode-font-size) * 0.92);
+  --moon-font-size-title: calc(var(--vscode-font-size) * 1.25);
+  --moon-mono: "JetBrains Mono Variable", var(--vscode-editor-font-family), monospace;
+  --moon-line-height: 1.55;
+  --moon-weight-strong: 600;
 
-  /* Spacing and shapes */
+  /* Spacing, sizes and shapes */
   --moon-space-xs: 2px;
   --moon-space-s: 4px;
   --moon-space-m: 8px;
   --moon-space-l: 12px;
-  --moon-radius: 4px;
+  --moon-space-xl: 16px;
+  --moon-space-xxl: 24px;
+  --moon-radius-s: 4px;
+  --moon-radius: 6px;
+  --moon-radius-l: 8px;
+  --moon-radius-round: 50%;
   --moon-border-width: 1px;
-  --moon-composer-min-rows-height: 60px;
+  --moon-quote-border-width: 2px;
+  --moon-list-indent: 20px;
+  --moon-icon-size: 16px;
+  --moon-icon-button-size: 24px;
+  --moon-header-mark-size: 16px;
+  --moon-welcome-mark-size: 44px;
+  --moon-working-mark-size: 14px;
+  --moon-send-size: 26px;
+  --moon-step-dot-size: 7px;
+  --moon-timeline-gutter: 18px;
+  --moon-timeline-line-width: 1px;
+  --moon-step-pad-top: 3px;
+  --moon-step-pad-bottom: 9px;
+  --moon-content-max-width: 440px;
   --moon-composer-max-height: 200px;
-  --moon-z-composer: 1;
+  --moon-scrollbar-size: 10px;
+  --moon-scrollbar-inset: 3px;
+  --moon-radius-pill: 999px;
+
+  /* Motion */
+  --moon-pulse-duration: 1.2s;
+  --moon-pulse-min-opacity: 0.35;
+  --moon-transition: 0.12s;
+  --moon-disabled-opacity: 0.45;
+}
+
+body.vscode-light {
+  --moon-accent: #5b52c9;
+  --moon-accent-fg: #ffffff;
+}
+
+body.vscode-high-contrast,
+body.vscode-high-contrast-light {
+  --moon-accent: var(--vscode-focusBorder);
+  --moon-accent-fg: var(--vscode-editor-background);
 }
 
 * {
@@ -69,75 +113,173 @@ body {
 
 button {
   font: inherit;
+  color: inherit;
   cursor: pointer;
   border: none;
-  border-radius: var(--moon-radius);
-  padding: var(--moon-space-s) var(--moon-space-l);
-  color: var(--moon-button-fg);
-  background: var(--moon-button-bg);
-}
-button:hover:not(:disabled) {
-  background: var(--moon-button-hover-bg);
+  background: none;
+  padding: 0;
 }
 button:disabled {
-  opacity: 0.5;
   cursor: default;
+  opacity: var(--moon-disabled-opacity);
 }
-button.secondary {
-  color: var(--moon-button2-fg);
-  background: var(--moon-button2-bg);
-}
-button.secondary:hover:not(:disabled) {
-  background: var(--moon-button2-hover-bg);
-}
-button.link {
-  padding: 0;
-  color: var(--moon-link);
-  background: none;
-  text-decoration: underline;
-}
-button:focus-visible,
-textarea:focus-visible {
+button:focus-visible {
   outline: var(--moon-border-width) solid var(--moon-focus);
-  outline-offset: calc(var(--moon-border-width) * -1);
+  outline-offset: var(--moon-border-width);
 }
 
-/* Layout */
+/*
+ * Scrollbars: a slim rounded pill inset from the edge, no arrows or track. It shows only
+ * while the pointer is over the area that scrolls, and turns lavender when hovered or dragged.
+ * (The thumb's transparent border + padding-box background makes the pill thinner than the gutter.)
+ */
+html {
+  /*
+   * VS Code's default webview styles set scrollbar-color on <html>. In Chromium a set
+   * scrollbar-color switches off every ::-webkit-scrollbar rule below, so reset it.
+   */
+  scrollbar-color: auto;
+}
+::-webkit-scrollbar {
+  width: var(--moon-scrollbar-size);
+  height: var(--moon-scrollbar-size);
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-button {
+  display: none;
+}
+::-webkit-scrollbar-thumb {
+  border: var(--moon-scrollbar-inset) solid transparent;
+  border-radius: var(--moon-radius-pill);
+  background-clip: padding-box;
+  background-color: transparent;
+}
+:hover::-webkit-scrollbar-thumb {
+  background-color: var(--moon-scrollbar);
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--moon-scrollbar-accent);
+}
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--moon-accent);
+}
+
+.moon-icon {
+  width: var(--moon-icon-size);
+  height: var(--moon-icon-size);
+  flex: none;
+}
+
+/* ---------- Layout ---------- */
+
 .moon-panel {
   display: flex;
   flex-direction: column;
   height: 100%;
 }
+
 .moon-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--moon-space-m);
-  padding: var(--moon-space-s) var(--moon-space-m);
+  padding: var(--moon-space-m) var(--moon-space-l);
   border-bottom: var(--moon-border-width) solid var(--moon-border);
-  color: var(--moon-fg-muted);
-  font-size: var(--moon-font-size-small);
 }
+.moon-header-mark {
+  flex: none;
+  width: var(--moon-header-mark-size);
+  height: var(--moon-header-mark-size);
+  color: var(--moon-accent);
+}
+.moon-header-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--moon-weight-strong);
+}
+.moon-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--moon-icon-button-size);
+  height: var(--moon-icon-button-size);
+  border-radius: var(--moon-radius-s);
+  color: var(--moon-fg-muted);
+}
+.moon-icon-button:hover:not(:disabled) {
+  color: var(--moon-fg);
+  background: var(--moon-hover-bg);
+}
+
 .moon-messages {
   flex: 1;
   min-height: 0; /* lets the list scroll inside the panel instead of growing past it */
   overflow-y: auto;
-  padding: var(--moon-space-m);
+  padding: var(--moon-space-xl) var(--moon-space-l);
   display: flex;
   flex-direction: column;
-  gap: var(--moon-space-l);
-}
-.moon-empty {
-  color: var(--moon-fg-muted);
-  padding: var(--moon-space-l) var(--moon-space-s);
+  gap: var(--moon-space-xl);
 }
 
-/* Messages */
+/* ---------- Welcome ---------- */
+
+.moon-welcome {
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: var(--moon-space-m);
+}
+.moon-welcome-mark {
+  width: var(--moon-welcome-mark-size);
+  height: var(--moon-welcome-mark-size);
+  color: var(--moon-accent);
+  margin-bottom: var(--moon-space-s);
+}
+.moon-welcome-title {
+  margin: 0;
+  font-size: var(--moon-font-size-title);
+  font-weight: var(--moon-weight-strong);
+}
+.moon-welcome-text {
+  margin: 0;
+  max-width: var(--moon-content-max-width);
+  color: var(--moon-fg-muted);
+}
+.moon-starters {
+  width: 100%;
+  max-width: var(--moon-content-max-width);
+  margin-top: var(--moon-space-xl);
+  display: flex;
+  flex-direction: column;
+  border: var(--moon-border-width) solid var(--moon-border);
+  border-radius: var(--moon-radius-l);
+  overflow: hidden;
+}
+.moon-starter {
+  padding: var(--moon-space-m) var(--moon-space-l);
+  text-align: left;
+  color: var(--moon-fg);
+}
+.moon-starter + .moon-starter {
+  border-top: var(--moon-border-width) solid var(--moon-border);
+}
+.moon-starter:hover:not(:disabled) {
+  background: var(--moon-list-hover-bg);
+}
+
+/* ---------- Messages ---------- */
+
 .moon-message-user {
-  align-self: stretch;
-  padding: var(--moon-space-m);
-  border-radius: var(--moon-radius);
-  background: var(--moon-user-bg);
+  padding: var(--moon-space-m) var(--moon-space-l);
+  border: var(--moon-border-width) solid var(--moon-border);
+  border-radius: var(--moon-radius-l);
+  background: var(--moon-surface);
+  color: var(--moon-input-fg);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -146,40 +288,19 @@ textarea:focus-visible {
   flex-direction: column;
   gap: var(--moon-space-m);
 }
-.moon-answer {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.moon-answer code {
-  font-family: var(--moon-mono);
-  background: var(--moon-code-bg);
-  border-radius: var(--moon-radius);
-  padding: 0 var(--moon-space-xs);
-}
-
-/* Live log */
-.moon-log {
-  margin: 0;
-  padding: var(--moon-space-s) var(--moon-space-m);
-  list-style: none;
-  border-left: var(--moon-border-width) solid var(--moon-border);
+.moon-working {
+  display: flex;
+  align-items: center;
+  gap: var(--moon-space-m);
   color: var(--moon-fg-muted);
   font-size: var(--moon-font-size-small);
-  font-family: var(--moon-mono);
 }
-.moon-log li {
-  display: flex;
-  gap: var(--moon-space-m);
-  overflow-wrap: anywhere;
+.moon-working-mark {
+  width: var(--moon-working-mark-size);
+  height: var(--moon-working-mark-size);
+  color: var(--moon-accent);
+  animation: moon-pulse var(--moon-pulse-duration) ease-in-out infinite;
 }
-.moon-log .running {
-  color: var(--moon-warn);
-}
-.moon-log .done {
-  color: var(--moon-ok);
-}
-
-/* Notices (stopped, error) */
 .moon-notice {
   font-size: var(--moon-font-size-small);
   color: var(--moon-fg-muted);
@@ -188,32 +309,212 @@ textarea:focus-visible {
   color: var(--moon-error);
 }
 
-/* Composer */
-.moon-composer {
-  z-index: var(--moon-z-composer);
-  display: flex;
-  flex-direction: column;
-  gap: var(--moon-space-s);
-  padding: var(--moon-space-m);
+/*
+ * Agent steps: a timeline. Each step has a dot in a left gutter; a line joins each dot to the
+ * next one (drawn from this dot's centre down to the next dot's centre).
+ */
+.moon-timeline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.moon-step {
+  --moon-dot-center: calc(var(--moon-step-pad-top) + var(--moon-line-height) * 0.5em);
+  position: relative;
+  padding: var(--moon-step-pad-top) 0 var(--moon-step-pad-bottom) var(--moon-timeline-gutter);
+}
+.moon-step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: calc((var(--moon-timeline-gutter) - var(--moon-timeline-line-width)) / 2);
+  top: var(--moon-dot-center);
+  bottom: calc(var(--moon-dot-center) * -1);
+  width: var(--moon-timeline-line-width);
+  background: var(--moon-timeline-line);
+}
+.moon-step-dot {
+  position: absolute;
+  left: calc((var(--moon-timeline-gutter) - var(--moon-step-dot-size)) / 2);
+  top: calc(var(--moon-dot-center) - var(--moon-step-dot-size) / 2);
+  width: var(--moon-step-dot-size);
+  height: var(--moon-step-dot-size);
+  border-radius: var(--moon-radius-round);
+  background: var(--moon-ok);
+}
+.moon-step.running .moon-step-dot {
+  background: var(--moon-accent);
+  animation: moon-pulse var(--moon-pulse-duration) ease-in-out infinite;
+}
+.moon-step.note .moon-step-dot {
+  background: var(--moon-fg-muted);
+}
+.moon-step-body {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.moon-step-action {
+  font-weight: var(--moon-weight-strong);
+  margin-right: var(--moon-space-m);
+}
+.moon-step.note .moon-step-action {
+  font-weight: normal;
+  color: var(--moon-fg-muted);
+}
+.moon-step-target {
+  font-family: var(--moon-mono);
+  font-size: var(--moon-font-size-small);
+  color: var(--moon-step-target);
+}
+
+@keyframes moon-pulse {
+  50% {
+    opacity: var(--moon-pulse-min-opacity);
+  }
+}
+
+/* Answer text (Markdown) */
+.moon-answer {
+  overflow-wrap: anywhere;
+}
+.moon-answer > :first-child {
+  margin-top: 0;
+}
+.moon-answer > :last-child {
+  margin-bottom: 0;
+}
+.moon-answer p,
+.moon-answer ul,
+.moon-answer ol,
+.moon-answer pre,
+.moon-answer table,
+.moon-answer blockquote {
+  margin: var(--moon-space-m) 0;
+}
+.moon-answer h1,
+.moon-answer h2,
+.moon-answer h3,
+.moon-answer h4 {
+  margin: var(--moon-space-l) 0 var(--moon-space-s);
+  font-size: var(--moon-font-size);
+  font-weight: var(--moon-weight-strong);
+}
+.moon-answer ul,
+.moon-answer ol {
+  padding-left: var(--moon-list-indent);
+}
+.moon-answer li + li {
+  margin-top: var(--moon-space-xs);
+}
+.moon-answer a {
+  color: var(--moon-link);
+}
+.moon-answer code {
+  font-family: var(--moon-mono);
+  font-size: var(--moon-font-size-small);
+  background: var(--moon-code-bg);
+  border-radius: var(--moon-radius-s);
+  padding: 0 var(--moon-space-xs);
+}
+.moon-answer pre {
+  padding: var(--moon-space-m) var(--moon-space-l);
+  overflow-x: auto;
+  background: var(--moon-code-bg);
+  border-radius: var(--moon-radius);
+}
+.moon-answer pre code {
+  padding: 0;
+  background: none;
+}
+.moon-answer blockquote {
+  padding-left: var(--moon-space-m);
+  border-left: var(--moon-quote-border-width) solid var(--moon-border);
+  color: var(--moon-fg-muted);
+}
+.moon-answer table {
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+.moon-answer th,
+.moon-answer td {
+  padding: var(--moon-space-xs) var(--moon-space-m);
+  border: var(--moon-border-width) solid var(--moon-border);
+  text-align: left;
+}
+.moon-answer hr {
+  border: none;
   border-top: var(--moon-border-width) solid var(--moon-border);
 }
-.moon-composer textarea {
+
+/* ---------- Composer ---------- */
+
+.moon-composer {
+  padding: var(--moon-space-m) var(--moon-space-l) var(--moon-space-l);
+}
+.moon-composer-box {
+  border: var(--moon-border-width) solid var(--moon-border);
+  border-radius: var(--moon-radius-l);
+  background: var(--moon-surface);
+  transition: border-color var(--moon-transition);
+}
+.moon-composer-box:focus-within {
+  border-color: var(--moon-focus);
+}
+.moon-composer-box textarea {
+  display: block;
   width: 100%;
-  min-height: var(--moon-composer-min-rows-height);
   max-height: var(--moon-composer-max-height);
-  resize: vertical;
-  padding: var(--moon-space-s) var(--moon-space-m);
+  resize: none;
+  padding: var(--moon-space-m) var(--moon-space-l);
   color: var(--moon-input-fg);
-  background: var(--moon-input-bg);
-  border: var(--moon-border-width) solid var(--moon-input-border);
-  border-radius: var(--moon-radius);
+  background: none;
+  border: none;
+  outline: none;
   font: inherit;
 }
-.moon-composer-actions {
+.moon-composer-box textarea::placeholder {
+  color: var(--moon-placeholder);
+}
+.moon-composer-toolbar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: var(--moon-space-m);
+  gap: var(--moon-space-l);
+  min-width: 0;
+  padding: var(--moon-space-xs) var(--moon-space-m) var(--moon-space-m) var(--moon-space-l);
+}
+.moon-toolbar-spacer {
+  flex: 1;
+}
+.moon-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--moon-space-s);
+  min-width: 0;
   color: var(--moon-fg-muted);
   font-size: var(--moon-font-size-small);
+}
+.moon-meta-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.moon-send-button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--moon-send-size);
+  height: var(--moon-send-size);
+  border-radius: var(--moon-radius);
+  color: var(--moon-accent-fg);
+  background: var(--moon-accent);
+}
+.moon-send-button:disabled {
+  color: var(--moon-fg-muted);
+  background: var(--moon-hover-bg);
+  opacity: 1;
+}
+.moon-send-button.stop {
+  color: var(--moon-fg);
+  background: var(--moon-hover-bg);
 }

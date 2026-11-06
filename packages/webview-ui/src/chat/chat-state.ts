@@ -2,12 +2,15 @@
 // An agent turn is a list of parts in the order they arrived: answer text and live-log lines
 // can interleave (the agent may say something, call tools, then answer).
 
-import type { MoonEvent } from "../protocol/messages";
+import type { MoonEvent, PanelSettings, TypingSettings } from "../protocol/messages";
 
 export interface LogLine {
   id: string;
-  text: string;
-  /** Tool calls run until their result arrives; notices are done at once. */
+  /** "tool": a tool call ("Read" + target). "note": a plain line (subagent started, compaction). */
+  kind: "tool" | "note";
+  action: string;
+  target: string;
+  /** Tool calls run until their result arrives; notes are done at once. */
   done: boolean;
 }
 
@@ -23,14 +26,18 @@ export interface ChatState {
   chatId: string;
   entries: Entry[];
   sessionUrl?: string;
+  /** Model of this chat's TrueForge session (known once the session exists). */
   model?: string;
+  /** Model a new chat will use, from config. */
+  configuredModel?: string;
   projectName?: string;
+  typing?: TypingSettings;
 }
 
 export type ChatAction =
   | { type: "sent"; text: string }
   | { type: "new-chat"; chatId: string }
-  | { type: "project"; projectName: string | undefined }
+  | { type: "settings"; settings: PanelSettings }
   | { type: "event"; chatId: string; event: MoonEvent };
 
 export const newChatId = (): string => crypto.randomUUID();
@@ -52,9 +59,17 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         entries: [...state.entries, { kind: "user", text: action.text }, { kind: "agent", parts: [], status: "running" }],
       };
     case "new-chat":
-      return { chatId: action.chatId, entries: [], projectName: state.projectName };
-    case "project":
-      return { ...state, projectName: action.projectName };
+      return {
+        chatId: action.chatId,
+        entries: [],
+        projectName: state.projectName,
+        typing: state.typing,
+        configuredModel: state.configuredModel,
+      };
+    case "settings": {
+      const { projectName, typing, model } = action.settings;
+      return { ...state, projectName, typing, configuredModel: model };
+    }
     case "event":
       if (action.chatId !== state.chatId) return state; // late event from a chat that was replaced
       return applyEvent(state, action.event);
@@ -72,7 +87,13 @@ function applyEvent(state: ChatState, event: MoonEvent): ChatState {
       appendText(turn.parts, event.text);
       break;
     case "tool-call":
-      appendLog(turn.parts, { id: event.id, text: `${event.subagent ? "subagent: " : ""}${event.summary}`, done: false });
+      appendLog(turn.parts, {
+        id: event.id,
+        kind: "tool",
+        action: event.subagent ? `Subagent · ${event.step.action}` : event.step.action,
+        target: event.step.target,
+        done: false,
+      });
       break;
     case "tool-result":
       turn.parts = turn.parts.map((p) =>
@@ -80,7 +101,13 @@ function applyEvent(state: ChatState, event: MoonEvent): ChatState {
       );
       break;
     case "notice":
-      appendLog(turn.parts, { id: `notice-${turn.parts.length}-${event.text}`, text: event.text, done: true });
+      appendLog(turn.parts, {
+        id: `note-${turn.parts.length}-${event.text}`,
+        kind: "note",
+        action: event.text,
+        target: "",
+        done: true,
+      });
       break;
     case "done":
       turn.status = event.status;

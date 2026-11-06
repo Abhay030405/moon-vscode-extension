@@ -5,7 +5,10 @@
     "port": 8790,
     "requestTimeoutMs": 5000,
     "statusCheckIntervalMs": 15000,
-    "allowedOutboundHosts": ["localhost", "127.0.0.1"],
+    "allowedOutboundHosts": [
+      "localhost",
+      "127.0.0.1"
+    ],
     "sessionUrlTemplate": "{baseUrl}/sessions/{sessionId}"
   },
   "models": {
@@ -88,5 +91,9 @@
       "**/.env.sample",
       "**/.env.template"
     ]
+  },
+  "ui": {
+    "typingCharsPerSecond": 120,
+    "typingMaxLagMs": 1500
   }
 }

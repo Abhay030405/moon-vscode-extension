@@ -6,6 +6,7 @@
   "private": true,
   "publisher": "moon",
   "license": "Apache-2.0",
+  "icon": "media/moon-logo.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/Abhay030405/moon-vscode-extension.git"
@@ -33,7 +34,7 @@
       "activitybar": [
         {
           "id": "moon",
-          "title": "Moon",
+          "title": "Moon. Orbits your code. Lands only when you say yes.",
           "icon": "media/moon.svg"
         }
       ]
@@ -43,7 +44,7 @@
         {
           "type": "webview",
           "id": "moon.panel",
-          "name": "Chat"
+          "name": "Moon. Orbits your code. Lands only when you say yes."
         }
       ]
     },

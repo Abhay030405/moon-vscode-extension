@@ -133,6 +133,8 @@ Real config files are git-ignored; only the `*.example.json` files are committed
 | `tools.maxFileBytes` | Larger files are not read or searched |
 | `tools.maxOutputChars` | Any tool result is cut at this many characters |
 | `tools.ignoredDirs` | Folders the tools never walk into (dependencies, build output, caches) |
+| `ui.typingCharsPerSecond` | Steady speed the panel reveals a streamed answer at (it arrives from the model in bursts) |
+| `ui.typingMaxLagMs` | The panel speeds up so it is never more than this far behind the real stream |
 | `safety.secretFileGlobs`, `safety.secretFileExceptions` | Files the tools refuse to read or list (keys, `.env`, certificates), and the allowed exceptions (`.env.example`) |
 
 </details>

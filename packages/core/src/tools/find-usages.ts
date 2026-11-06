@@ -21,5 +21,5 @@ export const findUsagesTool = defineTool({
     const result = searchLines(ctx, (line) => word.test(line) && !definition.test(line));
     return ctx.capOutput(wrapUntrusted(`usages of ${name}`, formatMatches(result, `usages of ${name}`)));
   },
-  describe: (args) => `finding usages of ${args.name ?? ""}`,
+  describe: (args) => ({ action: "Find usages", target: args.name ?? "" }),
 });

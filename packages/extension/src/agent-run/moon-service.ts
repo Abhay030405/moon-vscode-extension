@@ -19,6 +19,7 @@ import {
   type MoonConfig,
   type RunningMcpServer,
 } from "@moon/core";
+import type { PanelSettings } from "@moon/webview-ui/protocol";
 import { resolveConfigPath } from "../status/moon-setup.js";
 
 export class MoonService implements vscode.Disposable {
@@ -32,6 +33,19 @@ export class MoonService implements vscode.Disposable {
   /** The folder Moon's tools work on: the first workspace folder. */
   projectRoot(): string | undefined {
     return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  }
+
+  /** What the panel shows before a chat starts. Empty values if the config can't be read. */
+  panelSettings(): Omit<PanelSettings, "type" | "projectName"> {
+    try {
+      const { ui, models } = loadMoonConfig(resolveConfigPath(this.context));
+      return {
+        typing: { charsPerSecond: ui.typingCharsPerSecond, maxLagMs: ui.typingMaxLagMs },
+        model: modelRef(models.main),
+      };
+    } catch {
+      return { typing: undefined, model: undefined };
+    }
   }
 
   /** Starts a new chat: loads config, makes sure the MCP server runs and is registered. */
