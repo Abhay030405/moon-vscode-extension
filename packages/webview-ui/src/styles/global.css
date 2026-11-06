@@ -50,7 +50,14 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
+  overflow: hidden;
   margin: 0;
   padding: 0;
   color: var(--moon-fg);
@@ -99,7 +106,7 @@ textarea:focus-visible {
 .moon-panel {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
 }
 .moon-header {
   display: flex;
@@ -113,6 +120,7 @@ textarea:focus-visible {
 }
 .moon-messages {
   flex: 1;
+  min-height: 0; /* lets the list scroll inside the panel instead of growing past it */
   overflow-y: auto;
   padding: var(--moon-space-m);
   display: flex;
