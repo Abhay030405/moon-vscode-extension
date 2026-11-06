@@ -21,6 +21,10 @@ export const MoonConfigSchema = z
       version: z.string().min(1),
       baseUrl: z.string().url(),
       port: positiveInt,
+      /** Give up on a single TrueForge API request (not a model turn) after this long. */
+      requestTimeoutMs: positiveInt,
+      /** How often the extension re-checks that TrueForge is reachable (status bar). */
+      statusCheckIntervalMs: positiveInt,
       /** Local hosts TrueForge may still call (needed to reach Moon's MCP server). */
       allowedOutboundHosts: z.array(z.string().min(1)).min(1),
     }),

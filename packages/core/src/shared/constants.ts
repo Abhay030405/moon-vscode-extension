@@ -9,3 +9,9 @@ export const CONFIG_FILE_NAME = "moon.json";
 
 /** The committed example the user copies to create CONFIG_FILE_NAME. */
 export const EXAMPLE_CONFIG_FILE_NAME = "moon.example.json";
+
+/**
+ * How soon to re-read config/moon.json after it failed to load. (Once it loads,
+ * trueforge.statusCheckIntervalMs from the config is used instead.)
+ */
+export const CONFIG_RETRY_MS = 3000;
