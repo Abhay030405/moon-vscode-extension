@@ -1,4 +1,3 @@
-import { readFileSync, statSync } from "node:fs";
 import { z } from "zod";
 import { wrapUntrusted } from "../safety/untrusted-text.js";
 import { ToolError } from "./context.js";
@@ -8,7 +7,7 @@ export const readFileTool = defineTool({
   name: "read_file",
   title: "Read file",
   description:
-    "Read part of a text file, with line numbers. Give start_line/end_line to read only what you need " +
+    "Read part of a text file, with line numbers (files open in the editor are read with their unsaved changes). Give start_line/end_line to read only what you need " +
     "(one call returns a limited number of lines). Use search_text or find_definition first to know where to look.",
   input: {
     path: z.string().min(1).describe("File path relative to the project root."),
@@ -18,21 +17,7 @@ export const readFileTool = defineTool({
   readOnly: true,
   run(ctx, args) {
     const { abs, rel } = ctx.resolveReadable(args.path);
-    let size: number;
-    try {
-      const stat = statSync(abs);
-      if (!stat.isFile()) throw new ToolError(`"${rel}" is not a file.`);
-      size = stat.size;
-    } catch (err) {
-      if (err instanceof ToolError) throw err;
-      throw new ToolError(`File not found: ${rel || args.path}`);
-    }
-    if (size > ctx.limits.maxFileBytes) {
-      throw new ToolError(`"${rel}" is too large to read (${size} bytes). Use search_text to find the part you need.`);
-    }
-    if (!ctx.isSearchableText(abs)) throw new ToolError(`"${rel}" looks like a binary file.`);
-
-    const lines = readFileSync(abs, "utf8").split(/\r?\n/);
+    const lines = ctx.readText(abs, rel || args.path).split(/\r?\n/);
     const total = lines.length;
     const maxLines = ctx.limits.readFileMaxLines;
     const start = Math.min(args.start_line ?? 1, Math.max(total, 1));

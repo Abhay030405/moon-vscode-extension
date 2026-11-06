@@ -5,18 +5,22 @@ import { PathGuardError } from "../safety/path-guard.js";
 import { ToolError, type ToolContext } from "./context.js";
 import { findDefinitionTool } from "./find-definition.js";
 import { findUsagesTool } from "./find-usages.js";
+import { getErrorsTool } from "./get-errors.js";
 import { listFilesTool } from "./list-files.js";
+import { proposeEditTool } from "./propose-edit.js";
 import { readFileTool } from "./read-file.js";
 import { searchTextTool } from "./search-text.js";
 import { stepText, type MoonTool } from "./tool.js";
 
-/** Phase 1: read-only tools. Write and command tools are added in later phases. */
+/** Every Moon tool. Each agent definition picks the ones it may use (enableTools). */
 export const MOON_TOOLS: MoonTool[] = [
   listFilesTool,
   searchTextTool,
   findDefinitionTool,
   findUsagesTool,
   readFileTool,
+  getErrorsTool,
+  proposeEditTool,
 ] as MoonTool[];
 
 /** Reported for every tool call, so the extension can log what the agent did. */
@@ -43,7 +47,8 @@ export function registerMoonTools(
         title: tool.title,
         description: tool.description,
         inputSchema: tool.input,
-        annotations: { title: tool.title, readOnlyHint: tool.readOnly, openWorldHint: false },
+        // No Moon tool deletes anything or reaches outside the project.
+        annotations: { title: tool.title, readOnlyHint: tool.readOnly, destructiveHint: false, openWorldHint: false },
       },
       async (args: Record<string, unknown>) => {
         const started = Date.now();

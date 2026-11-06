@@ -28,7 +28,12 @@
     "serverName": "moon-editor"
   },
   "agent": {
-    "definitionFile": "agents/moon-agent.json"
+    "definitionFile": "agents/moon-agent.json",
+    "inlineDefinitionFile": "agents/moon-inline.json"
+  },
+  "inline": {
+    "contextLines": 150,
+    "maxProblems": 20
   },
   "resilience": {
     "watchdogMs": 12000,

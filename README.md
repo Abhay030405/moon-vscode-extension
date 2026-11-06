@@ -126,6 +126,9 @@ Real config files are git-ignored; only the `*.example.json` files are committed
 | `mcp.host`, `mcp.port`, `mcp.path` | Where Moon's MCP server listens. `port: 0` picks a free port on each start; Moon registers the URL with TrueForge itself |
 | `mcp.serverName` | Name the MCP server is registered under in TrueForge (and used by the agent definition) |
 | `agent.definitionFile` | Agent definition for agent mode, relative to this repository |
+| `agent.inlineDefinitionFile` | Agent definition for inline edit (Ctrl+I), relative to this repository |
+| `inline.contextLines` | Lines of the file sent with an inline edit, before and after the selection (the agent can read more with its tools) |
+| `inline.maxProblems` | Most editor problems (errors, warnings) sent with an inline edit |
 | `resilience.*` | Watchdog and circuit-breaker timers for the automatic fallback *(Phase 5)* |
 | `context.*` | Project-map size budget *(Phase 4)* |
 | `tools.searchMaxResults`, `tools.listFilesMaxResults` | Most matches / files one tool call returns |
@@ -205,7 +208,11 @@ In that window:
 - **Moon: Check setup** (Command Palette, or click the status bar) lists the models TrueForge has, with their window sizes, and whether Moon's main and backup models are among them. Details are written to the **Moon** output panel.
 - The **Moon** icon in the activity bar opens the chat panel. Ask a question about the open project: the live log shows each tool call (`searching "…"`, `reading path:lines`), the answer streams in, **Stop** ends the run at once, and the **TrueForge session** link opens the same session in TrueForge's UI. Every tool call is also written to the **Moon** output panel.
 
+- **Inline edit:** open a file, select the lines to change and press **Ctrl+I** (Cmd+I on macOS) or **Ctrl+Alt+M**. Moon's box opens under the selection with the cursor in it. Type the instruction and press **Ctrl+Enter**. The box shows each step; **Esc** (or the Stop button) stops it and the file stays untouched. Then each change is shown in place, like Copilot: new lines **green**, removed lines **red**, with **Accept / Reject** above each change and **Accept all / Reject all**. The preview is only in the editor, never on disk: saving during review saves only the changes you accepted. After the last decision, **Ctrl+Z** returns to the original code. While changes wait for review, the file and the folders above it show a green dot (●) in the Explorer.
+
 Moon finds its config at `config/moon.json` in this repository. To use another file, set **`moon.configPath`** in VS Code settings to its full path.
+
+**Ctrl+I: Moon or Copilot.** By default Moon takes Ctrl+I in the editor. To give Ctrl+I back to Copilot's inline chat, turn off **`moon.inlineEdit.useCtrlI`** in VS Code settings; Moon's inline edit stays on **Ctrl+Alt+M**. (This is a VS Code setting, not part of `config/moon.json`, because only VS Code settings can switch a keybinding.)
 
 To install it as a normal extension instead *(planned)*:
 
@@ -218,7 +225,7 @@ code --install-extension packages/extension/moon-*.vsix
 
 ## Using Moon
 
-- **Inline edit:** select code → press the Moon inline-edit keybinding (see *Keyboard Shortcuts → "Moon"*) → type an instruction → Accept or Reject each hunk.
+- **Inline edit:** select code → **Ctrl+I** (or **Ctrl+Alt+M**, or right-click → *Edit selection with Moon*) → type an instruction → **Ctrl+Enter** → Accept or Reject each change.
 - **Agent mode:** open the **Moon** panel from the activity bar → type a request (optionally with `@file` / `@symbol`) → watch the live log and context card → review the hunks → **Apply**. Use **Undo this whole run** to roll back.
 - **Stop:** the Stop button works at every stage and leaves your workspace unchanged.
 

@@ -183,7 +183,9 @@ describe("MCP server", () => {
       await client.connect(new StreamableHTTPClientTransport(new URL(server.url)));
       const { tools } = await client.listTools();
       expect(tools.map((t) => t.name).sort()).toEqual(MOON_TOOLS.map((t) => t.name).sort());
-      expect(tools.every((t) => t.annotations?.readOnlyHint === true)).toBe(true);
+      // Only propose_edit is not read-only; none is destructive (so TrueForge's "@destructive" never matches).
+      expect(tools.filter((t) => t.annotations?.readOnlyHint !== true).map((t) => t.name)).toEqual(["propose_edit"]);
+      expect(tools.every((t) => t.annotations?.destructiveHint === false)).toBe(true);
 
       const ok = await client.callTool({ name: "find_definition", arguments: { name: "get_flag" } });
       expect(JSON.stringify(ok.content)).toContain("src/app.py:3:");

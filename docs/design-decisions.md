@@ -45,6 +45,19 @@ Last updated: 5 November 2026
 **Decided**
 - When one hunk is accepted and lines move, the remaining hunks are recalculated (see section 9, small items).
 
+**Decided (6 Nov): how it looks, Copilot-style**
+- The user asked for it to work like Copilot's Ctrl+I: a small box opens in the editor at the selection, you type there, the change shows in place.
+- VS Code's public API cannot add Copilot's inline-chat widget or draw extra lines inside the editor, so Moon uses what the stable API offers:
+  - **Instruction box:** VS Code's inline comment box under the selected lines (Moon's own comment controller). Moon opens it through VS Code's "Add Comment" command, which puts the cursor in it. Ctrl+Enter sends. The same box shows the live steps, Stop, and a link to the TrueForge session.
+  - **Preview (changed 6 Nov, user's choice, replaces "never inside the file text"):** like Copilot, each change's new lines are put in the editor right under its old lines: new lines **green**, old lines **red**. The stable API can't draw extra lines without putting them in the text, so the preview lives in the **unsaved editor text only**:
+    - Saving during review (including auto-save on focus change) writes the file **without** the preview (only accepted changes), then puts the preview back in the editor. Auto-save "after delay" drops the preview instead, so it can't loop.
+    - Accept removes that change's red lines; Reject removes its green lines. Each is one Ctrl+Z step, and Ctrl+Z / Ctrl+Y back into a preview state shows its colours and buttons again.
+    - After the last decision, the first Ctrl+Z returns straight to the original code (Moon goes back to the original text, then applies the result, as two steps).
+    - Closing the box or starting a new inline edit removes the preview. Typing inside the preview hides the colours and buttons until the text matches a preview state again (known limitation).
+  - **Buttons:** CodeLens "Accept / Reject" above each change, "Accept all / Reject all" above the first.
+- **Ctrl+I:** Moon takes it by default; the VS Code setting `moon.inlineEdit.useCtrlI` gives it back to Copilot. Ctrl+Alt+M always works. (A VS Code setting, not `config/moon.json`, because only VS Code settings can switch a keybinding.)
+- Side effect: Moon's comment controller makes every line "commentable" by Moon, so VS Code shows a faint "+" in the gutter on hover; clicking it also opens Moon's box.
+
 ---
 
 ## 2. Agent mode (A2)

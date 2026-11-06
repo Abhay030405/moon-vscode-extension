@@ -338,9 +338,9 @@ Dates assume starting **6 November** and finishing on **19 November**, with 20 N
 ### Phase 2: Inline edit — Task A (8–9 Nov)
 
 **Build**
-- Keybinding → instruction box → inline session (`moon-inline.json`) → `propose_edit`.
-- Context: selection + rest of file + VS Code errors (`get_errors`); up to ~3 lookups.
-- Preview drawn on top of the code (green/red), never inside the file text.
+- Keybinding (Ctrl+I, switchable back to Copilot with the `moon.inlineEdit.useCtrlI` VS Code setting; Ctrl+Alt+M always) → instruction box in the editor under the selection (VS Code's inline comment box, opened through "Add Comment" so the cursor is in it) → inline session (`moon-inline.json`) → `propose_edit`.
+- Context: selection + the file around it (`inline.contextLines` each side) + VS Code errors (also `get_errors`); up to ~3 lookups. Tools read the editor's unsaved text.
+- Copilot-style preview in the editor: each change's new lines are placed right under its old lines in the unsaved editor text, new lines green, old lines red; CodeLens Accept / Reject above each change. The preview is never saved: a save during review writes only accepted changes, then puts the preview back. After the last decision the first Ctrl+Z returns to the original code.
 - Accept/Reject buttons per hunk; remaining hunks recalculated after each click; Accept all / Reject all.
 - Apply through the editor so **Ctrl+Z** works.
 - Stop during streaming → preview disappears, "Stopped" shown.

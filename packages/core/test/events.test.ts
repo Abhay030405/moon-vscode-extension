@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TurnEventMapper, definitionRegExp, loadAgentDefinition, sessionUrl } from "../src/index.js";
+import { TurnEventMapper, describeToolCall, definitionRegExp, loadAgentDefinition, sessionUrl } from "../src/index.js";
 import { fileURLToPath } from "node:url";
 
 // Shapes recorded from TrueForge 0.184.1 (trimmed).
@@ -62,5 +62,13 @@ describe("agent definition", () => {
 
   it("builds the TrueForge session link", () => {
     expect(sessionUrl("{baseUrl}/sessions/{sessionId}", "http://h:1/", "abc")).toBe("http://h:1/sessions/abc");
+  });
+});
+
+describe("describeToolCall", () => {
+  it("shows the wrapped tool's step when called through TrueForge's call_tool", () => {
+    const args = JSON.stringify({ mcp_server: "moon-editor", tool_name: "propose_edit", input: { path: "src/a.py", edits: [] } });
+    expect(describeToolCall("call_tool", args)).toEqual({ action: "Propose edit", target: "src/a.py" });
+    expect(describeToolCall("list_tools", "{}")).toEqual({ action: "List tools", target: "" });
   });
 });

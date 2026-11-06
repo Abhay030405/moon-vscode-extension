@@ -13,3 +13,6 @@ export * from "./trueforge/registration.js";
 export * from "./trueforge/sessions.js";
 export * from "./trueforge/events.js";
 export * from "./trueforge/chat.js";
+export * from "./workspace/hunks.js";
+export * from "./workspace/apply.js";
+export * from "./prompts/inline-prompt.js";
