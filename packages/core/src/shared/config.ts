@@ -5,6 +5,10 @@
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 
+// Zod's speed-up (JIT) probes the browser-only `navigator` global, which VS Code's extension
+// host reports as a deprecation warning. Our config is tiny, so turn the speed-up off.
+z.config({ jitless: true });
+
 const positiveInt = z.number().int().positive();
 
 const ModelRefSchema = z.strictObject({

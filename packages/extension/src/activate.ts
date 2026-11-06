@@ -7,7 +7,7 @@ import { MoonStatusBar } from "./status/status-bar.js";
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel("Moon");
-  const statusBar = new MoonStatusBar(context);
+  const statusBar = new MoonStatusBar(context, output);
 
   context.subscriptions.push(
     output,
