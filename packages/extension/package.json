@@ -29,6 +29,24 @@
         "category": "Moon"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "moon",
+          "title": "Moon",
+          "icon": "media/moon.svg"
+        }
+      ]
+    },
+    "views": {
+      "moon": [
+        {
+          "type": "webview",
+          "id": "moon.panel",
+          "name": "Chat"
+        }
+      ]
+    },
     "configuration": {
       "title": "Moon",
       "properties": {
@@ -47,6 +65,7 @@
   },
   "devDependencies": {
     "@moon/core": "workspace:*",
+    "@moon/webview-ui": "workspace:*",
     "@types/vscode": "1.95.0"
   }
 }

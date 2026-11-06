@@ -1,1 +1,16 @@
-{}
+{
+  "$comment": "Moon's agent-mode definition, sent to TrueForge as an inline AgentSpec when a chat starts. Moon fills the {{...}} placeholders: {{model}} from config/moon.json (models.main, or models.backup on fallback), {{mcpServer}} from mcp.serverName, {{file:...}} with the text of that file (relative to this folder). Phase 1: read-only tools only.",
+  "model": { "name": "{{model}}" },
+  "instructions": "{{file:prompts/agent-instructions.md}}\n\n{{file:prompts/safety-rules.md}}",
+  "mcpServers": [
+    {
+      "name": "{{mcpServer}}",
+      "enableTools": ["@read-only"],
+      "preloadTools": ["search_text", "find_definition", "read_file"],
+      "requireApprovalForTools": ["@write", "@destructive"]
+    }
+  ],
+  "config": {
+    "iterationLimit": 40
+  }
+}

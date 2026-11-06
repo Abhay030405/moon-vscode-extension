@@ -1,3 +1,15 @@
 export * from "./shared/config.js";
 export * from "./shared/constants.js";
 export * from "./trueforge/client.js";
+export * from "./safety/path-guard.js";
+export * from "./safety/secret-guard.js";
+export * from "./safety/untrusted-text.js";
+export * from "./tools/context.js";
+export * from "./tools/tool.js";
+export * from "./tools/registry.js";
+export { definitionRegExp } from "./tools/find-definition.js";
+export * from "./tools/server.js";
+export * from "./trueforge/registration.js";
+export * from "./trueforge/sessions.js";
+export * from "./trueforge/events.js";
+export * from "./trueforge/chat.js";

@@ -41,7 +41,8 @@ export interface SetupReport {
 export const modelRef = (m: ModelRef): string => `${m.provider}/${m.model}`;
 
 export class TrueForgeClient {
-  private readonly sdk: TrueForge;
+  /** The SDK client, for the session and registration modules. */
+  readonly sdk: TrueForge;
 
   constructor(private readonly settings: MoonConfig["trueforge"]) {
     this.sdk = new TrueForge({

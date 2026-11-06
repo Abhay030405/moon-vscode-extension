@@ -111,6 +111,32 @@ cp config/trueforge.example.json config/trueforge.json
 
 Real config files are git-ignored; only the `*.example.json` files are committed.
 
+<details>
+<summary><b>Every setting in <code>config/moon.json</code></b></summary>
+
+| Setting | Meaning |
+|---|---|
+| `trueforge.version`, `trueforge.port` | TrueForge package version and port used by `scripts/start-trueforge` |
+| `trueforge.baseUrl` | Where Moon talks to TrueForge |
+| `trueforge.requestTimeoutMs` | How long Moon waits for TrueForge to answer a request (for a streamed turn: until the stream starts) |
+| `trueforge.statusCheckIntervalMs` | How often the status bar re-checks TrueForge |
+| `trueforge.allowedOutboundHosts` | Hosts TrueForge may call even though they are local (Moon's MCP server is on localhost) |
+| `trueforge.sessionUrlTemplate` | Link to a session in TrueForge's UI; `{baseUrl}` and `{sessionId}` are filled in |
+| `models.main`, `models.backup` | `provider` and `model` names as registered in TrueForge |
+| `mcp.host`, `mcp.port`, `mcp.path` | Where Moon's MCP server listens. `port: 0` picks a free port on each start; Moon registers the URL with TrueForge itself |
+| `mcp.serverName` | Name the MCP server is registered under in TrueForge (and used by the agent definition) |
+| `agent.definitionFile` | Agent definition for agent mode, relative to this repository |
+| `resilience.*` | Watchdog and circuit-breaker timers for the automatic fallback *(Phase 5)* |
+| `context.*` | Project-map size budget *(Phase 4)* |
+| `tools.searchMaxResults`, `tools.listFilesMaxResults` | Most matches / files one tool call returns |
+| `tools.readFileMaxLines` | Most lines one `read_file` call returns |
+| `tools.maxFileBytes` | Larger files are not read or searched |
+| `tools.maxOutputChars` | Any tool result is cut at this many characters |
+| `tools.ignoredDirs` | Folders the tools never walk into (dependencies, build output, caches) |
+| `safety.secretFileGlobs`, `safety.secretFileExceptions` | Files the tools refuse to read or list (keys, `.env`, certificates), and the allowed exceptions (`.env.example`) |
+
+</details>
+
 ### 4. Start TrueForge (local mode)
 
 ```bash
@@ -162,7 +188,7 @@ The agent definitions live in [`agents/`](agents/):
 | `agents/moon-scout.md` | The scout subagent: looks only, reports files and reasons |
 | `agents/prompts/*.md` | The instructions and shared safety rules |
 
-Moon sends these to TrueForge itself when it creates a session, with the model taken from `config/moon.json`. You don't need to import them by hand.
+Moon sends these to TrueForge itself when it creates a session, with the model taken from `config/moon.json`. You don't need to import them by hand. The JSON files are TrueForge agent specs with three placeholders that Moon fills in: `{{model}}` (from `models.main`, or `models.backup` on fallback), `{{mcpServer}}` (from `mcp.serverName`) and `{{file:...}}` (the text of a prompt file). Moon also registers its MCP server (`moon-editor`) in TrueForge automatically before each new chat.
 
 ### 6. Build and run the extension
 
@@ -175,6 +201,7 @@ Open the `moon` folder in VS Code and press **F5** (launch configuration "Run Mo
 In that window:
 - The **status bar** (bottom left) shows **"Moon: connected to TrueForge (N models)"**. If TrueForge is stopped it shows **"Moon: TrueForge not reachable"**, and it updates by itself within `trueforge.statusCheckIntervalMs` when you start or stop TrueForge. A warning colour means something needs fixing (hover for the reason).
 - **Moon: Check setup** (Command Palette, or click the status bar) lists the models TrueForge has, with their window sizes, and whether Moon's main and backup models are among them. Details are written to the **Moon** output panel.
+- The **Moon** icon in the activity bar opens the chat panel. Ask a question about the open project: the live log shows each tool call (`searching "…"`, `reading path:lines`), the answer streams in, **Stop** ends the run at once, and the **TrueForge session** link opens the same session in TrueForge's UI. Every tool call is also written to the **Moon** output panel.
 
 Moon finds its config at `config/moon.json` in this repository. To use another file, set **`moon.configPath`** in VS Code settings to its full path.
 
