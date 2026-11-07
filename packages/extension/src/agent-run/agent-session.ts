@@ -18,6 +18,7 @@ import * as vscode from "vscode";
 import {
   AgentRun,
   commandRisks,
+  expandMentions,
   finalText,
   hunkWithContext,
   REJECTED_HUNK_PREVIEW_LINES,
@@ -26,8 +27,10 @@ import {
   type ApprovalAnswer,
   type ApprovalDecision,
   type ApprovalRequest,
+  type ContextAssembler,
   type FileReview,
   type HunkDecisions,
+  type Mention,
   type MoonConfig,
   type MoonEvent,
 } from "@moon/core";
@@ -81,6 +84,8 @@ export class AgentSession implements vscode.Disposable {
     readonly chatId: string,
     private readonly chat: AgentChat,
     private readonly config: MoonConfig,
+    private readonly assembler: ContextAssembler,
+    private readonly windowTokens: number,
     private readonly root: string,
     private readonly deps: AgentSessionDeps,
   ) {}
@@ -88,12 +93,12 @@ export class AgentSession implements vscode.Disposable {
   static async create(chatId: string, deps: AgentSessionDeps): Promise<AgentSession> {
     const root = deps.service.projectRoot();
     if (!root) throw new Error("Open a folder first: Moon's tools work on the open project.");
-    const { chat, config } = await deps.service.createChat();
-    return new AgentSession(chatId, chat, config, root, deps);
+    const { chat, config, assembler, windowTokens } = await deps.service.createChat();
+    return new AgentSession(chatId, chat, config, assembler, windowTokens, root, deps);
   }
 
   /** Sends a message; answers every approval the agent asks for until the agent is done. */
-  async send(text: string): Promise<void> {
+  async send(text: string, mentions: readonly Mention[] = []): Promise<void> {
     this.stopped = false;
     try {
       this.ensureRun();
@@ -101,7 +106,8 @@ export class AgentSession implements vscode.Disposable {
       this.emit({ type: "done", status: "error", message: (err as Error).message });
       return;
     }
-    const message = this.notes.length ? `${this.notes.join("\n")}\n\n${text}` : text;
+    const mentionText = await this.assembleContext(text, mentions);
+    const message = [...this.notes, text, mentionText].filter(Boolean).join("\n\n");
     this.notes = [];
     await this.chat.send(message, this.emit);
     while (this.chat.waitingFor.length > 0 && !this.stopped) {
@@ -319,6 +325,39 @@ export class AgentSession implements vscode.Disposable {
     this.lastApply = applied.size > 0 ? applied : undefined;
     this.deps.post({ type: "applied", chatId: this.chatId, files: applied.size, hunks, undoable: applied.size > 0 });
     return reviewReport(files, approved.accepted, REJECTED_HUNK_PREVIEW_LINES);
+  }
+
+  // ---- context ----
+
+  /**
+   * Before the first message: builds the project map and rules into the session's opening
+   * message and shows the summary in the panel. Returns the text for the @-mentions.
+   * A failure here never blocks the chat: the agent still has its search tools.
+   */
+  private async assembleContext(request: string, mentions: readonly Mention[]): Promise<string> {
+    const readText = (rel: string) => this.readProjectText(rel);
+    try {
+      if (!this.chat.started) {
+        const pack = await this.assembler.prepare({ root: this.root, request, mentions, windowTokens: this.windowTokens, readText });
+        this.chat.setSessionContext({ openingMessages: [pack.openingMessage], compactAtTokens: pack.compactAtTokens });
+        this.deps.post({ type: "context", chatId: this.chatId, summary: pack.summary });
+        const { map } = pack.summary;
+        this.deps.output.appendLine(
+          `[context] map ${map.tokens}/${map.budgetTokens} tokens, ${map.shownFiles} of ${map.totalFiles} files, window ${this.windowTokens}`,
+        );
+        return pack.mentionText;
+      }
+      const { context } = this.config;
+      return expandMentions(mentions, {
+        readText,
+        tags: (rel) => this.assembler.tagsFor(this.root, rel),
+        maxTokens: context.mentionMaxTokens,
+        symbolMaxLines: context.symbolMaxLines,
+      }).text;
+    } catch (err) {
+      this.deps.output.appendLine(`[context] could not build the project map: ${(err as Error).message}`);
+      return "";
+    }
   }
 
   // ---- helpers ----

@@ -1,9 +1,9 @@
 // Messages between the Moon panel (webview) and the extension. Both sides import this file,
 // so a change to the protocol is checked by the compiler on both ends.
 
-import type { MoonEvent } from "@moon/core";
+import type { ContextSummary, Mention, MentionCandidate, MoonEvent } from "@moon/core";
 
-export type { MoonEvent };
+export type { ContextSummary, Mention, MentionCandidate, MoonEvent };
 
 /** How the panel reveals streamed text (from ui.* in config/moon.json). */
 export interface TypingSettings {
@@ -77,8 +77,12 @@ export type CommandDecision = "once" | "always" | "deny";
 export type PanelToExtension =
   /** The panel has loaded and wants the current state. */
   | { type: "ready" }
-  /** The user sent a message in the current chat. */
-  | { type: "send"; chatId: string; text: string }
+  /** The user sent a message in the current chat, with what they picked in the @ picker. */
+  | { type: "send"; chatId: string; text: string; mentions: Mention[] }
+  /** Open a project file in the editor (from the context card). */
+  | { type: "open-file"; rel: string }
+  /** The @ picker wants files and names matching `query` (answered with mention-results). */
+  | { type: "mention-search"; requestId: number; query: string }
   /** The user pressed Stop. */
   | { type: "stop"; chatId: string }
   /** The user started a new chat (the old one is stopped if it was running). */
@@ -105,6 +109,10 @@ export type ExtensionToPanel =
   | PanelSettings
   /** An event from the running turn of chat `chatId`. */
   | { type: "event"; chatId: string; event: MoonEvent }
+  /** What Moon put in the agent's context at the start of the chat (map, rules, @-mentions). */
+  | { type: "context"; chatId: string; summary: ContextSummary }
+  /** Answer to mention-search. */
+  | { type: "mention-results"; requestId: number; items: MentionCandidate[] }
   /** Show (or with undefined, remove) the command approval card. */
   | { type: "command-approval"; chatId: string; approval: CommandApprovalView | undefined }
   /** Show (or with undefined, close) the review screen. */

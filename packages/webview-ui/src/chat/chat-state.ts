@@ -2,7 +2,15 @@
 // An agent turn is a list of parts in the order they arrived: answer text and live-log lines
 // can interleave (the agent may say something, call tools, then answer).
 
-import type { CommandApprovalView, ExtensionToPanel, MoonEvent, PanelSettings, ReviewView, TypingSettings } from "../protocol/messages";
+import type {
+  CommandApprovalView,
+  ContextSummary,
+  ExtensionToPanel,
+  MoonEvent,
+  PanelSettings,
+  ReviewView,
+  TypingSettings,
+} from "../protocol/messages";
 
 export interface LogLine {
   id: string;
@@ -14,7 +22,17 @@ export interface LogLine {
   done: boolean;
 }
 
-export type TurnPart = { kind: "text"; text: string } | { kind: "log"; lines: LogLine[] };
+/** The files the agent chose and why (from its report_context call). */
+export interface ChosenFile {
+  path: string;
+  reason: string;
+}
+
+export type TurnPart =
+  | { kind: "text"; text: string }
+  | { kind: "log"; lines: LogLine[] }
+  /** The context card: what Moon gave the agent (summary) and the files it chose (files). */
+  | { kind: "context"; summary?: ContextSummary; files?: ChosenFile[] };
 
 /** "waiting": TrueForge paused the turn until the user answers an approval (command or review). */
 export type TurnStatus = "running" | "waiting" | "done" | "cancelled" | "error";
@@ -98,6 +116,8 @@ function applyMessage(state: ChatState, message: ChatMessage): ChatState {
   switch (message.type) {
     case "event":
       return applyEvent(state, message.event);
+    case "context":
+      return updateContextCard(state, { summary: message.summary });
     case "command-approval":
       return { ...state, approval: message.approval };
     case "review":
@@ -111,6 +131,7 @@ function applyMessage(state: ChatState, message: ChatMessage): ChatState {
 
 function applyEvent(state: ChatState, event: MoonEvent): ChatState {
   if (event.type === "session") return { ...state, sessionUrl: event.url, model: event.model };
+  if (event.type === "context-choice") return updateContextCard(state, { files: event.files });
   const last = state.entries.at(-1);
   if (last?.kind !== "agent") return state;
   const turn = { ...last, parts: [...last.parts] };
@@ -156,6 +177,17 @@ function applyEvent(state: ChatState, event: MoonEvent): ChatState {
       break;
   }
   return { ...state, entries: [...state.entries.slice(0, -1), turn] };
+}
+
+/** Fills the current turn's context card (created at the start of the turn if missing). */
+function updateContextCard(state: ChatState, update: { summary?: ContextSummary; files?: ChosenFile[] }): ChatState {
+  const last = state.entries.at(-1);
+  if (last?.kind !== "agent") return state;
+  const parts = [...last.parts];
+  const index = parts.findIndex((p) => p.kind === "context");
+  if (index === -1) parts.unshift({ kind: "context", ...update });
+  else parts[index] = { ...parts[index]!, ...update } as TurnPart;
+  return { ...state, entries: [...state.entries.slice(0, -1), { ...last, parts }] };
 }
 
 function appendText(parts: TurnPart[], text: string): void {

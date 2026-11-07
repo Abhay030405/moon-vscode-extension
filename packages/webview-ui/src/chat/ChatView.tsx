@@ -3,6 +3,7 @@
 
 import { useEffect, useRef, type ReactNode } from "react";
 import { MoonMark } from "../brand/MoonMark";
+import { ContextCard } from "../context-card/ContextCard";
 import { LiveLog } from "../live-log/LiveLog";
 import { TurnNotice } from "../notices/TurnNotice";
 import type { TypingSettings } from "../protocol/messages";
@@ -21,11 +22,12 @@ interface Props {
   projectName: string | undefined;
   canSend: boolean;
   onSend(text: string): void;
+  onOpenFile(path: string): void;
   /** Shown after the conversation: the command approval card, the apply notice. */
   footer?: ReactNode;
 }
 
-export function ChatView({ entries, typing, projectName, canSend, onSend, footer }: Props) {
+export function ChatView({ entries, typing, projectName, canSend, onSend, onOpenFile, footer }: Props) {
   // Keep the newest text in view by scrolling only the message list (never the whole page).
   const list = useRef<HTMLDivElement>(null);
   const scrollToEnd = () => {
@@ -65,7 +67,15 @@ export function ChatView({ entries, typing, projectName, canSend, onSend, footer
         ) : (
           <div key={i} className="moon-message-agent">
             {entry.parts.map((part, j) =>
-              part.kind === "text" ? (
+              part.kind === "context" ? (
+                <ContextCard
+                  key={j}
+                  summary={part.summary}
+                  files={part.files}
+                  working={entry.status === "running"}
+                  onOpenFile={onOpenFile}
+                />
+              ) : part.kind === "text" ? (
                 <AnswerText
                   key={j}
                   text={part.text}
