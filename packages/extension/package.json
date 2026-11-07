@@ -58,6 +58,11 @@
         "icon": "$(close)"
       },
       {
+        "command": "moon.agentReview.showDiff",
+        "title": "Show Moon's change in the diff editor",
+        "category": "Moon"
+      },
+      {
         "command": "moon.inlineEdit.acceptHunk",
         "title": "Accept this change",
         "category": "Moon",
@@ -118,6 +123,10 @@
     },
     "menus": {
       "commandPalette": [
+        {
+          "command": "moon.agentReview.showDiff",
+          "when": "false"
+        },
         {
           "command": "moon.inlineEdit.submit",
           "when": "false"

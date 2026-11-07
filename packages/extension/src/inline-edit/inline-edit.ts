@@ -358,7 +358,9 @@ class RunView {
         this.notes.push(event.text);
         break;
       case "done":
-        this.status = event.status;
+        // The inline agent has no tools that need approval, so a pause is unexpected: treat it as an error.
+        this.status = event.status === "paused" ? "error" : event.status;
+        if (event.status === "paused") this.notes.push("Moon stopped to ask for an approval inline edit does not support. The file was not changed.");
         if (event.status === "cancelled") this.notes.push("Stopped. The file was not changed.");
         if (event.status === "error") this.notes.push(`Moon could not finish: ${event.message ?? "unknown error"}. The file was not changed.`);
         break;

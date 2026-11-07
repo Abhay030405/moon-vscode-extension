@@ -1,7 +1,7 @@
 // The conversation: user messages, and for each agent turn its steps and answer.
 // With no messages yet it shows a short welcome with a few starter questions.
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { MoonMark } from "../brand/MoonMark";
 import { LiveLog } from "../live-log/LiveLog";
 import { TurnNotice } from "../notices/TurnNotice";
@@ -21,9 +21,11 @@ interface Props {
   projectName: string | undefined;
   canSend: boolean;
   onSend(text: string): void;
+  /** Shown after the conversation: the command approval card, the apply notice. */
+  footer?: ReactNode;
 }
 
-export function ChatView({ entries, typing, projectName, canSend, onSend }: Props) {
+export function ChatView({ entries, typing, projectName, canSend, onSend, footer }: Props) {
   // Keep the newest text in view by scrolling only the message list (never the whole page).
   const list = useRef<HTMLDivElement>(null);
   const scrollToEnd = () => {
@@ -68,7 +70,7 @@ export function ChatView({ entries, typing, projectName, canSend, onSend }: Prop
                   key={j}
                   text={part.text}
                   // Typing effect only while the answer arrives; a stopped or failed turn shows everything at once.
-                  typing={entry.status === "running" || entry.status === "done" ? typing : undefined}
+                  typing={entry.status === "running" || entry.status === "waiting" || entry.status === "done" ? typing : undefined}
                   onGrow={scrollToEnd}
                 />
               ) : (
@@ -88,10 +90,12 @@ export function ChatView({ entries, typing, projectName, canSend, onSend }: Prop
                 Working…
               </div>
             )}
+            {entry.status === "waiting" && <div className="moon-working">Waiting for your answer…</div>}
             <TurnNotice status={entry.status} error={entry.error} />
           </div>
         ),
       )}
+      {footer}
     </div>
   );
 }

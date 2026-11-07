@@ -21,6 +21,12 @@
   --moon-list-hover-bg: var(--vscode-list-hoverBackground);
   --moon-ok: var(--vscode-testing-iconPassed, var(--vscode-charts-green));
   --moon-error: var(--vscode-errorForeground);
+  --moon-warning: var(--vscode-editorWarning-foreground, var(--moon-fg-muted));
+  --moon-diff-added-bg: var(--vscode-diffEditor-insertedLineBackground, var(--vscode-diffEditor-insertedTextBackground));
+  --moon-diff-removed-bg: var(--vscode-diffEditor-removedLineBackground, var(--vscode-diffEditor-removedTextBackground));
+  --moon-button-bg: var(--vscode-button-secondaryBackground, var(--moon-surface));
+  --moon-button-fg: var(--vscode-button-secondaryForeground, var(--moon-fg));
+  --moon-button-hover-bg: var(--vscode-button-secondaryHoverBackground, var(--moon-hover-bg));
   --moon-focus: var(--vscode-focusBorder);
   --moon-timeline-line: var(--vscode-editorIndentGuide-background1, var(--vscode-editorIndentGuide-background, var(--moon-border)));
   --moon-step-target: var(--vscode-textLink-foreground);
@@ -71,6 +77,9 @@
   --moon-scrollbar-size: 10px;
   --moon-scrollbar-inset: 3px;
   --moon-radius-pill: 999px;
+  --moon-check-output-max-height: 160px;
+  --moon-rejected-opacity: 0.5;
+  --moon-primary-hover-opacity: 0.9;
 
   /* Motion */
   --moon-pulse-duration: 1.2s;
@@ -517,4 +526,220 @@ html {
 .moon-send-button.stop {
   color: var(--moon-fg);
   background: var(--moon-hover-bg);
+}
+
+/* Buttons in cards and the review */
+.moon-button {
+  padding: var(--moon-space-s) var(--moon-space-m);
+  border-radius: var(--moon-radius-s);
+  color: var(--moon-button-fg);
+  background: var(--moon-button-bg);
+  font-size: var(--moon-font-size-small);
+}
+.moon-button:hover:not(:disabled) {
+  background: var(--moon-button-hover-bg);
+}
+.moon-button.primary {
+  color: var(--moon-accent-fg);
+  background: var(--moon-accent);
+}
+.moon-button.primary:hover:not(:disabled) {
+  opacity: var(--moon-primary-hover-opacity);
+}
+
+/* Command approval card */
+.moon-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--moon-space-m);
+  padding: var(--moon-space-l);
+  border: var(--moon-border-width) solid var(--moon-accent);
+  border-radius: var(--moon-radius-l);
+}
+.moon-card-title {
+  font-weight: var(--moon-weight-strong);
+}
+.moon-card-command {
+  margin: 0;
+  padding: var(--moon-space-m);
+  border-radius: var(--moon-radius-s);
+  background: var(--moon-code-bg);
+  font-family: var(--moon-mono);
+  font-size: var(--moon-font-size-small);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.moon-card-meta {
+  color: var(--moon-fg-muted);
+  font-size: var(--moon-font-size-small);
+}
+.moon-card-risks {
+  margin: 0;
+  padding-left: var(--moon-list-indent);
+  color: var(--moon-warning);
+  font-size: var(--moon-font-size-small);
+}
+.moon-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--moon-space-m);
+}
+
+/* After an apply */
+.moon-applied {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--moon-space-m);
+  color: var(--moon-ok);
+  font-size: var(--moon-font-size-small);
+}
+
+/* Review screen: fixed head and foot, the files scroll */
+.moon-review {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.moon-review-head,
+.moon-review-foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--moon-space-m);
+  padding: var(--moon-space-l);
+  border-bottom: var(--moon-border-width) solid var(--moon-border);
+}
+.moon-review-foot {
+  flex-direction: row;
+  border-top: var(--moon-border-width) solid var(--moon-border);
+  border-bottom: none;
+}
+.moon-review-title {
+  font-size: var(--moon-font-size-title);
+  font-weight: var(--moon-weight-strong);
+}
+.moon-review-summary {
+  color: var(--moon-fg-muted);
+  white-space: pre-wrap;
+}
+.moon-review-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--moon-space-m);
+}
+.moon-review-count {
+  color: var(--moon-fg-muted);
+  font-size: var(--moon-font-size-small);
+}
+.moon-review-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--moon-space-l);
+  display: flex;
+  flex-direction: column;
+  gap: var(--moon-space-xl);
+}
+.moon-review-file {
+  display: flex;
+  flex-direction: column;
+  gap: var(--moon-space-m);
+}
+.moon-review-file-head {
+  display: flex;
+  align-items: center;
+  gap: var(--moon-space-m);
+  font-weight: var(--moon-weight-strong);
+}
+.moon-review-file-name {
+  color: var(--moon-link);
+  font-family: var(--moon-mono);
+  font-size: var(--moon-font-size-small);
+  text-align: left;
+  word-break: break-all;
+}
+.moon-review-file-name:hover {
+  text-decoration: underline;
+}
+.moon-badge {
+  padding: 0 var(--moon-space-s);
+  border-radius: var(--moon-radius-pill);
+  border: var(--moon-border-width) solid var(--moon-border);
+  color: var(--moon-fg-muted);
+  font-size: var(--moon-font-size-small);
+  font-weight: normal;
+}
+.moon-badge.added {
+  color: var(--moon-ok);
+}
+.moon-badge.deleted {
+  color: var(--moon-error);
+}
+.moon-review-warning {
+  color: var(--moon-warning);
+  font-size: var(--moon-font-size-small);
+}
+.moon-hunk {
+  border: var(--moon-border-width) solid var(--moon-border);
+  border-radius: var(--moon-radius);
+  overflow: hidden;
+}
+.moon-hunk.rejected .moon-hunk-lines {
+  opacity: var(--moon-rejected-opacity);
+}
+.moon-hunk-head {
+  display: flex;
+  align-items: center;
+  gap: var(--moon-space-m);
+  padding: var(--moon-space-s) var(--moon-space-m);
+  color: var(--moon-fg-muted);
+  font-size: var(--moon-font-size-small);
+  cursor: pointer;
+}
+.moon-hunk-lines {
+  margin: 0;
+  overflow-x: auto;
+  font-family: var(--moon-mono);
+  font-size: var(--moon-font-size-small);
+}
+.moon-hunk-line {
+  padding-right: var(--moon-space-m);
+  white-space: pre;
+}
+.moon-hunk-line.added {
+  background: var(--moon-diff-added-bg);
+}
+.moon-hunk-line.removed {
+  background: var(--moon-diff-removed-bg);
+}
+.moon-hunk-sign {
+  display: inline-block;
+  width: var(--moon-timeline-gutter);
+  text-align: center;
+  color: var(--moon-fg-muted);
+  user-select: none;
+}
+.moon-check summary {
+  cursor: pointer;
+  font-family: var(--moon-mono);
+  font-size: var(--moon-font-size-small);
+  word-break: break-all;
+}
+.moon-check summary.ok {
+  color: var(--moon-ok);
+}
+.moon-check summary.failed {
+  color: var(--moon-error);
+}
+.moon-check-output {
+  margin: var(--moon-space-s) 0 0;
+  padding: var(--moon-space-m);
+  max-height: var(--moon-check-output-max-height);
+  overflow: auto;
+  border-radius: var(--moon-radius-s);
+  background: var(--moon-code-bg);
+  font-family: var(--moon-mono);
+  font-size: var(--moon-font-size-small);
+  white-space: pre-wrap;
 }

@@ -37,7 +37,9 @@ interface Props {
 export function AnswerText({ text, typing, onGrow }: Props): ReactNode {
   const shown = useTypewriter(text, typing);
   const typingNow = shown < text.length;
-  useEffect(() => onGrow?.(), [shown, onGrow]);
+  useEffect(() => {
+    onGrow?.();
+  }, [shown, onGrow]);
 
   return (
     <div className="moon-answer">
