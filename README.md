@@ -137,7 +137,14 @@ Real config files are git-ignored; only the `*.example.json` files are committed
 | `agentRun.reviewContextLines` | Unchanged lines shown around each change in the review screen |
 | `agentRun.reviewOutputChars` | Characters of each command's output shown with the checks in the review screen |
 | `resilience.*` | Watchdog and circuit-breaker timers for the automatic fallback *(Phase 5)* |
-| `context.*` | Project-map size budget *(Phase 4)* |
+| `context.mapBudgetRatio`, `context.mapBudgetMinTokens`, `context.mapBudgetMaxTokens` | The project map gets this share of the model's window, between the minimum and maximum |
+| `context.fallbackContextLength` | Window size to assume when TrueForge reports none for the model |
+| `context.compactionRatio` | TrueForge compacts the conversation at this share of the window |
+| `context.mapMaxFiles` | The map parses at most this many files |
+| `context.rulesMaxTokens` | Most tokens of the project's `AGENTS.md` / `CLAUDE.md` given to the agent |
+| `context.mentionMaxTokens` | An `@file` bigger than this is given as its outline (names and lines) instead of its full text |
+| `context.symbolMaxLines` | An `@symbol` is given as at most this many lines of its definition |
+| `context.pickerMaxResults` | Most entries the `@` picker shows |
 | `tools.searchMaxResults`, `tools.listFilesMaxResults` | Most matches / files one tool call returns |
 | `tools.readFileMaxLines` | Most lines one `read_file` call returns |
 | `tools.maxFileBytes` | Larger files are not read or searched |
@@ -233,7 +240,9 @@ code --install-extension packages/extension/moon-*.vsix
 ## Using Moon
 
 - **Inline edit:** select code → **Ctrl+I** (or **Ctrl+Alt+M**, or right-click → *Edit selection with Moon*) → type an instruction → **Ctrl+Enter** → Accept or Reject each change.
-- **Agent mode:** open the **Moon** panel from the activity bar → type a request (optionally with `@file` / `@symbol`) → watch the live log and context card → review the hunks → **Apply**. Use **Undo this whole run** to roll back.
+- **Agent mode:** open the **Moon** panel from the activity bar → type a request → watch the live log and context card → review the hunks → **Apply**. Use **Undo this whole run** to roll back.
+  - Type `@` to attach a file (`@src/app/cli.py`) or a definition (`@run_command`) from a picker.
+  - The **context card** shows the files the agent chose and why (its own reasons), how much of the project map's token budget was used, and the project's `AGENTS.md` / `CLAUDE.md` if found.
 - **Stop:** the Stop button works at every stage and leaves your workspace unchanged.
 
 ---

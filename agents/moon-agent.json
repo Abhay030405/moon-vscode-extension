@@ -1,7 +1,9 @@
 {
-  "$comment": "Moon's agent-mode definition, sent to TrueForge as an inline AgentSpec when a chat starts. Moon fills the {{...}} placeholders: {{model}} from config/moon.json (models.main, or models.backup on fallback), {{mcpServer}} with the agent endpoint's name (mcp.serverName + '-agent'), {{file:...}} with the text of that file (relative to this folder). The agent works in a hidden copy of the project: looking and editing never pause; run_command and apply_changes pause for the user's approval (apply_changes opens Moon's review screen).",
-  "model": { "name": "{{model}}" },
-  "instructions": "{{file:prompts/agent-instructions.md}}\n\n{{file:prompts/safety-rules.md}}",
+  "$comment": "Moon's agent-mode definition, sent to TrueForge as an inline AgentSpec when a chat starts. Moon fills the {{...}} placeholders: {{model}} from config/moon.json (models.main, or models.backup on fallback), {{mcpServer}} with the agent endpoint's name (mcp.serverName + '-agent'), {{file:...}} with the text of that file (relative to this folder). Moon also adds, when the session is created, an opening message with the project's rules file and the project map, and the compaction threshold (from the model's window). The agent works in a hidden copy of the project: looking and editing never pause; run_command and apply_changes pause for the user's approval (apply_changes opens Moon's review screen).",
+  "model": {
+    "name": "{{model}}"
+  },
+  "instructions": "{{file:prompts/agent-instructions.md}}\n\n{{file:moon-scout.md}}\n\n{{file:prompts/safety-rules.md}}",
   "mcpServers": [
     {
       "name": "{{mcpServer}}",
@@ -12,16 +14,31 @@
         "find_usages",
         "read_file",
         "get_errors",
+        "report_context",
         "edit_file",
         "list_pending_changes",
         "run_command",
         "apply_changes"
       ],
-      "preloadTools": ["search_text", "find_definition", "read_file", "edit_file", "run_command", "apply_changes"],
-      "requireApprovalForTools": ["run_command", "apply_changes"]
+      "preloadTools": [
+        "search_text",
+        "find_definition",
+        "read_file",
+        "report_context",
+        "edit_file",
+        "run_command",
+        "apply_changes"
+      ],
+      "requireApprovalForTools": [
+        "run_command",
+        "apply_changes"
+      ]
     }
   ],
   "config": {
-    "iterationLimit": 60
+    "iterationLimit": 60,
+    "dynamicSubAgents": {
+      "enabled": true
+    }
   }
 }
