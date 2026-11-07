@@ -36,6 +36,8 @@ export class AgentChat {
   private lastFinishedTurnId: string | undefined;
   /** A turn waiting for approval, and what it waits for. */
   private paused: { turnId: string; requests: ApprovalRequest[] } | undefined;
+  /** Added to the agent definition when the session is created (see setSessionContext). */
+  private sessionContext: { openingMessages: string[]; compactAtTokens?: number } | undefined;
 
   constructor(private readonly options: ChatOptions) {}
 
@@ -46,6 +48,20 @@ export class AgentChat {
   /** Tool calls waiting for the user's decision (empty when not paused). */
   get waitingFor(): readonly ApprovalRequest[] {
     return this.paused?.requests ?? [];
+  }
+
+  /**
+   * Context for the session, used when it is created (before the first message): opening
+   * messages the agent reads first (project rules and map), and when to compact.
+   * Ignored once the session exists.
+   */
+  setSessionContext(context: { openingMessages: string[]; compactAtTokens?: number }): void {
+    if (!this.sessionId) this.sessionContext = context;
+  }
+
+  /** True once the TrueForge session exists (the first message was sent). */
+  get started(): boolean {
+    return this.sessionId !== undefined;
   }
 
   /** Sends one user message and reports every event to `emit`. Resolves when the turn ends. */
@@ -101,7 +117,10 @@ export class AgentChat {
     try {
       const { client, model } = this.options;
       if (!this.sessionId) {
-        const spec = loadAgentDefinition(this.options.definitionFile, { model, mcpServer: this.options.mcpServer });
+        const spec = withSessionContext(
+          loadAgentDefinition(this.options.definitionFile, { model, mcpServer: this.options.mcpServer }),
+          this.sessionContext,
+        );
         this.sessionId = await createSession(client, spec, title ? firstLine(title) : undefined);
         const url = sessionUrl(this.options.sessionUrlTemplate, this.options.baseUrl, this.sessionId);
         report({ type: "session", sessionId: this.sessionId, url, model });
@@ -127,6 +146,25 @@ export class AgentChat {
       this.running = undefined;
     }
   }
+}
+
+/** Adds Moon's opening messages and compaction threshold to an agent definition. */
+function withSessionContext(
+  spec: TrueForgeApi.AgentSpec,
+  context: { openingMessages: string[]; compactAtTokens?: number } | undefined,
+): TrueForgeApi.AgentSpec {
+  if (!context) return spec;
+  const messages = [...(spec.messages ?? []), ...context.openingMessages.map((content) => ({ type: "user.message" as const, content }))];
+  const config = context.compactAtTokens
+    ? {
+        ...spec.config,
+        contextManagement: {
+          ...spec.config?.contextManagement,
+          compaction: { ...spec.config?.contextManagement?.compaction, trigger: { type: "input_tokens" as const, value: context.compactAtTokens } },
+        },
+      }
+    : spec.config;
+  return { ...spec, messages, config };
 }
 
 function firstLine(text: string): string {

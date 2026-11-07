@@ -11,7 +11,7 @@
 // new turn (see chat.ts).
 
 import { mergeEventDelta, type TrueForgeApi } from "@truefoundry/trueforge-sdk";
-import { MAIN_THREAD_ID, TRUEFORGE_CALL_TOOL } from "../shared/constants.js";
+import { MAIN_THREAD_ID, REPORT_CONTEXT_TOOL, TRUEFORGE_CALL_TOOL } from "../shared/constants.js";
 import { MOON_TOOLS } from "../tools/registry.js";
 import type { ToolStep } from "../tools/tool.js";
 
@@ -32,6 +32,8 @@ export type MoonEvent =
   | { type: "text"; text: string }
   /** The agent called a tool. `step` is how the live log shows it ("Read" + "src/app.py:1-80"). */
   | { type: "tool-call"; id: string; tool: string; step: ToolStep; subagent: boolean }
+  /** The agent reported the files it chose and why (report_context): the panel's context card. */
+  | { type: "context-choice"; files: { path: string; reason: string }[] }
   /** A tool call finished. */
   | { type: "tool-result"; id: string }
   /** Something worth a line in the live log (subagent started, context compacted, ...). */
@@ -109,13 +111,28 @@ export class TurnEventMapper {
   private finish(messageId: string): MoonEvent[] {
     const message = this.messages.get(messageId);
     this.messages.delete(messageId);
-    return (message?.toolCalls ?? []).map((call) => {
+    return (message?.toolCalls ?? []).flatMap((call): MoonEvent[] => {
       const { name, args } = resolveToolCall(call.toolInfo?.name ?? call.function.name, call.function.arguments);
       const step = describeTool(name, args);
       this.calls.set(call.id, { toolCallId: call.id, threadId: message!.threadId, tool: name, args, step });
-      return { type: "tool-call" as const, id: call.id, tool: name, step, subagent: message!.threadId !== MAIN_THREAD_ID };
+      const events: MoonEvent[] = [{ type: "tool-call", id: call.id, tool: name, step, subagent: message!.threadId !== MAIN_THREAD_ID }];
+      if (name === REPORT_CONTEXT_TOOL) {
+        const files = contextFiles(args.files);
+        if (files.length > 0) events.push({ type: "context-choice", files });
+      }
+      return events;
     });
   }
+}
+
+/** The files of a report_context call (ignores malformed entries). */
+function contextFiles(value: unknown): { path: string; reason: string }[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) =>
+    item && typeof item === "object" && typeof item.path === "string" && typeof item.reason === "string"
+      ? [{ path: item.path, reason: item.reason }]
+      : [],
+  );
 }
 
 /**
