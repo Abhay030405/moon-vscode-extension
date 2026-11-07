@@ -12,6 +12,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import {
   AgentChat,
+  ContextAssembler,
   AGENT_TOOLS,
   AgentRun,
   EDITOR_TOOLS,
@@ -30,10 +31,15 @@ import type { PanelSettings } from "@moon/webview-ui/protocol";
 import { VsCodeEditorBridge } from "../editor-bridge/editor-bridge.js";
 import { resolveConfigPath } from "../status/moon-setup.js";
 
+/** Folder inside dist/ with the tree-sitter files (copied by scripts/copy-tree-sitter.mjs). */
+const TREE_SITTER_DIR = "tree-sitter";
+
 export class MoonService implements vscode.Disposable {
   private server: { root: string; mcp: RunningMcpServer; tools: ToolContext } | undefined;
   /** The agent run the agent endpoint's tools work in (one at a time: the panel's chat). */
   private activeRun: AgentRun | undefined;
+  /** Builds the project map and @-mention context (one per window; its cache is in Moon's storage). */
+  private assembler: ContextAssembler | undefined;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -58,9 +64,40 @@ export class MoonService implements vscode.Disposable {
     }
   }
 
-  /** Starts a new chat in the Moon panel (agent mode). */
-  async createChat(): Promise<{ chat: AgentChat; config: MoonConfig }> {
-    return this.prepare("agent");
+  /**
+   * Starts a new chat in the Moon panel (agent mode), with the context assembler and the main
+   * model's window size (from TrueForge, or context.fallbackContextLength).
+   */
+  async createChat(): Promise<{ chat: AgentChat; config: MoonConfig; assembler: ContextAssembler; windowTokens: number }> {
+    const prepared = await this.prepare("agent");
+    return { ...prepared, assembler: this.contextAssembler(prepared.config), windowTokens: await this.windowTokens(prepared.config) };
+  }
+
+  /** The context assembler (also used by the panel's @ picker before a chat starts). */
+  contextAssembler(config: MoonConfig = loadMoonConfig(resolveConfigPath(this.context))): ContextAssembler {
+    const dir = vscode.Uri.joinPath(this.context.extensionUri, "dist", TREE_SITTER_DIR).fsPath;
+    this.assembler ??= new ContextAssembler(
+      {
+        grammarDir: dir,
+        queryDir: path.join(dir, "queries"),
+        runtimeWasm: path.join(dir, "tree-sitter.wasm"),
+      },
+      this.context.globalStorageUri.fsPath,
+      config,
+    );
+    return this.assembler;
+  }
+
+  /** The main model's context window as TrueForge reports it, else the configured fallback. */
+  private async windowTokens(config: MoonConfig): Promise<number> {
+    try {
+      const models = await new TrueForgeClient(config.trueforge).listModels();
+      const main = models.find((m) => m.ref === modelRef(config.models.main));
+      if (main?.contextLength) return main.contextLength;
+    } catch {
+      // TrueForge unreachable: the chat itself will report that.
+    }
+    return config.context.fallbackContextLength;
   }
 
   /** Points the agent endpoint's tools at this run (undefined = refuse calls). */

@@ -26,6 +26,8 @@
   --moon-diff-removed-bg: var(--vscode-diffEditor-removedLineBackground, var(--vscode-diffEditor-removedTextBackground));
   --moon-button-bg: var(--vscode-button-secondaryBackground, var(--moon-surface));
   --moon-button-fg: var(--vscode-button-secondaryForeground, var(--moon-fg));
+  --moon-picker-active-bg: var(--vscode-list-activeSelectionBackground, var(--moon-list-hover-bg));
+  --moon-picker-active-fg: var(--vscode-list-activeSelectionForeground, var(--moon-fg));
   --moon-button-hover-bg: var(--vscode-button-secondaryHoverBackground, var(--moon-hover-bg));
   --moon-focus: var(--vscode-focusBorder);
   --moon-timeline-line: var(--vscode-editorIndentGuide-background1, var(--vscode-editorIndentGuide-background, var(--moon-border)));
@@ -80,6 +82,9 @@
   --moon-check-output-max-height: 160px;
   --moon-rejected-opacity: 0.5;
   --moon-primary-hover-opacity: 0.9;
+  --moon-picker-max-height: 220px;
+  --moon-context-bar-height: 4px;
+  --moon-picker-kind-width: 46px;
 
   /* Motion */
   --moon-pulse-duration: 1.2s;
@@ -742,4 +747,123 @@ html {
   font-family: var(--moon-mono);
   font-size: var(--moon-font-size-small);
   white-space: pre-wrap;
+}
+
+/* @ picker: above the input box */
+.moon-composer {
+  position: relative;
+}
+.moon-picker {
+  position: absolute;
+  left: var(--moon-space-l);
+  right: var(--moon-space-l);
+  bottom: 100%;
+  max-height: var(--moon-picker-max-height);
+  margin: 0;
+  padding: var(--moon-space-s) 0;
+  overflow-y: auto;
+  list-style: none;
+  border: var(--moon-border-width) solid var(--moon-border);
+  border-radius: var(--moon-radius);
+  background: var(--moon-surface);
+}
+.moon-picker-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--moon-space-m);
+  padding: var(--moon-space-xs) var(--moon-space-m);
+  cursor: pointer;
+  font-size: var(--moon-font-size-small);
+}
+.moon-picker-item.active {
+  color: var(--moon-picker-active-fg);
+  background: var(--moon-picker-active-bg);
+}
+.moon-picker-kind {
+  flex: none;
+  width: var(--moon-picker-kind-width);
+  color: var(--moon-fg-muted);
+}
+.moon-picker-kind.symbol {
+  color: var(--moon-accent);
+}
+.moon-picker-label {
+  flex: none;
+  font-family: var(--moon-mono);
+}
+.moon-picker-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--moon-fg-muted);
+}
+
+/* Context card: files the agent chose (with reasons) and the context budget */
+.moon-context {
+  display: flex;
+  flex-direction: column;
+  gap: var(--moon-space-m);
+  padding: var(--moon-space-m) var(--moon-space-l);
+  border: var(--moon-border-width) solid var(--moon-border);
+  border-left: var(--moon-quote-border-width) solid var(--moon-accent);
+  border-radius: var(--moon-radius);
+}
+.moon-context-title {
+  font-weight: var(--moon-weight-strong);
+}
+.moon-context-files {
+  display: flex;
+  flex-direction: column;
+  gap: var(--moon-space-s);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.moon-context-file {
+  color: var(--moon-link);
+  font-family: var(--moon-mono);
+  font-size: var(--moon-font-size-small);
+  text-align: left;
+  word-break: break-all;
+}
+.moon-context-file:hover {
+  text-decoration: underline;
+}
+.moon-context-reason {
+  display: block;
+  color: var(--moon-fg-muted);
+  font-size: var(--moon-font-size-small);
+}
+.moon-context-note,
+.moon-context-dim {
+  color: var(--moon-fg-muted);
+  font-size: var(--moon-font-size-small);
+}
+.moon-context-budget {
+  display: flex;
+  flex-direction: column;
+  gap: var(--moon-space-xs);
+  font-size: var(--moon-font-size-small);
+}
+.moon-context-budget-line {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--moon-space-m);
+}
+.moon-context-bar {
+  width: 100%;
+  height: var(--moon-context-bar-height);
+  appearance: none;
+  border: none;
+  border-radius: var(--moon-radius-pill);
+  overflow: hidden;
+  background: var(--moon-hover-bg);
+}
+.moon-context-bar::-webkit-progress-bar {
+  background: var(--moon-hover-bg);
+}
+.moon-context-bar::-webkit-progress-value {
+  background: var(--moon-accent);
 }

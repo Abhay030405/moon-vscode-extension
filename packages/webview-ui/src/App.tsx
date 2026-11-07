@@ -10,6 +10,7 @@ import { chatReducer, initialState, isRunning, newChatId } from "./chat/chat-sta
 import { CommandApproval } from "./approval-card/CommandApproval";
 import { AppliedNotice } from "./review/AppliedNotice";
 import { ReviewScreen } from "./review/ReviewScreen";
+import type { Mention } from "./protocol/messages";
 import { onExtensionMessage, postToExtension } from "./vscode-api";
 
 export function App() {
@@ -21,15 +22,15 @@ export function App() {
   useEffect(() => {
     const unsubscribe = onExtensionMessage((message) => {
       if (message.type === "state") dispatch({ type: "settings", settings: message });
-      else dispatch({ type: "message", message });
+      else if (message.type !== "mention-results") dispatch({ type: "message", message }); // picker answers go to the picker
     });
     postToExtension({ type: "ready" });
     return unsubscribe;
   }, []);
 
-  const send = (text: string) => {
+  const send = (text: string, mentions: Mention[] = []) => {
     dispatch({ type: "sent", text });
-    postToExtension({ type: "send", chatId: state.chatId, text });
+    postToExtension({ type: "send", chatId: state.chatId, text, mentions });
   };
 
   const newChat = () => {
@@ -83,6 +84,7 @@ export function App() {
           projectName={state.projectName}
           canSend={canSend}
           onSend={send}
+          onOpenFile={(rel) => postToExtension({ type: "open-file", rel })}
           footer={
             <>
               {state.applyNotice && (

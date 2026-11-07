@@ -2,8 +2,9 @@
 // in the Moon view of the activity bar, and connects its messages to agent chats.
 
 import { randomBytes } from "node:crypto";
+import * as path from "node:path";
 import * as vscode from "vscode";
-import type { ExtensionToPanel, PanelToExtension } from "@moon/webview-ui/protocol";
+import type { ExtensionToPanel, Mention, MentionCandidate, PanelToExtension } from "@moon/webview-ui/protocol";
 import { AgentSession } from "../agent-run/agent-session.js";
 import type { MoonService } from "../agent-run/moon-service.js";
 import { REVIEW_COMMANDS } from "../commands.js";
@@ -64,7 +65,13 @@ export class MoonPanelProvider implements vscode.WebviewViewProvider, vscode.Dis
         this.output.appendLine(`[panel] error: ${message.message}`);
         return;
       case "send":
-        await this.send(message.chatId, message.text);
+        await this.send(message.chatId, message.text, message.mentions);
+        return;
+      case "open-file":
+        await this.openFile(message.rel);
+        return;
+      case "mention-search":
+        await this.searchMentions(message.requestId, message.query);
         return;
     }
     // The rest act on the current chat's agent session.
@@ -89,7 +96,32 @@ export class MoonPanelProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
   }
 
-  private async send(chatId: string, text: string): Promise<void> {
+  /** Opens a project file the agent chose (only files inside the open folder). */
+  private async openFile(rel: string): Promise<void> {
+    const root = this.service.projectRoot();
+    if (!root) return;
+    const abs = path.resolve(root, rel);
+    if (path.relative(root, abs).startsWith("..") || path.isAbsolute(path.relative(root, abs))) return;
+    try {
+      await vscode.window.showTextDocument(vscode.Uri.file(abs), { preview: true });
+    } catch (err) {
+      this.output.appendLine(`[panel] cannot open ${rel}: ${(err as Error).message}`);
+    }
+  }
+
+  /** The @ picker: files and names in the open project matching what was typed. */
+  private async searchMentions(requestId: number, query: string): Promise<void> {
+    const root = this.service.projectRoot();
+    let items: MentionCandidate[] = [];
+    try {
+      if (root) items = await this.service.contextAssembler().search(root, query);
+    } catch (err) {
+      this.output.appendLine(`[context] @ search failed: ${(err as Error).message}`);
+    }
+    this.post({ type: "mention-results", requestId, items });
+  }
+
+  private async send(chatId: string, text: string, mentions: Mention[]): Promise<void> {
     if (this.chat?.id !== chatId) {
       this.chat?.agent?.stop();
       this.chat = { id: chatId, agent: undefined };
@@ -109,7 +141,7 @@ export class MoonPanelProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
     // The user may have started a new chat while this one was being created.
     if (this.chat !== chat) return;
-    await chat.agent.send(text);
+    await chat.agent.send(text, mentions);
   }
 
   private postState(): void {
