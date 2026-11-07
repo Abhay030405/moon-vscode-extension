@@ -4,11 +4,26 @@
 // `model.message.delta`s with the same id (text pieces, tool-call pieces, then one with a
 // finishReason). Text is passed on piece by piece; tool calls are reported once the message
 // is finished, when their names and arguments are complete.
+//
+// Approval (checked against TrueForge 0.184): when a tool needs approval, TrueForge sends
+// `tool.approval_required` and then ends the turn ("done", with requiredActions). Moon reports
+// the waiting calls as one "approval" event and the turn as "paused"; the answer is sent as a
+// new turn (see chat.ts).
 
 import { mergeEventDelta, type TrueForgeApi } from "@truefoundry/trueforge-sdk";
 import { MAIN_THREAD_ID, TRUEFORGE_CALL_TOOL } from "../shared/constants.js";
 import { MOON_TOOLS } from "../tools/registry.js";
 import type { ToolStep } from "../tools/tool.js";
+
+/** A tool call waiting for the user's allow / deny. */
+export interface ApprovalRequest {
+  toolCallId: string;
+  threadId: string;
+  /** The tool's own name (unwrapped from TrueForge's call_tool), e.g. "run_command". */
+  tool: string;
+  args: Record<string, unknown>;
+  step: ToolStep;
+}
 
 export type MoonEvent =
   /** The session exists; `url` opens it in TrueForge's UI. */
@@ -21,8 +36,10 @@ export type MoonEvent =
   | { type: "tool-result"; id: string }
   /** Something worth a line in the live log (subagent started, context compacted, ...). */
   | { type: "notice"; text: string }
-  /** The turn ended. */
-  | { type: "done"; status: "done" | "cancelled" | "error"; message?: string };
+  /** Tool calls waiting for the user's decision (the turn then ends "paused"). */
+  | { type: "approval"; requests: ApprovalRequest[] }
+  /** The turn ended. "paused" = waiting for approval; answer it to continue. */
+  | { type: "done"; status: "done" | "paused" | "cancelled" | "error"; message?: string };
 
 type TurnEvent = TrueForgeApi.TurnStreamingEvent;
 type ModelMessage = TrueForgeApi.ModelMessageEvent;
@@ -30,6 +47,9 @@ type ModelMessage = TrueForgeApi.ModelMessageEvent;
 /** One per turn: remembers partly streamed messages until they finish. */
 export class TurnEventMapper {
   private readonly messages = new Map<string, ModelMessage>();
+  /** Finished tool calls of this turn, by id (to describe approval requests). */
+  private readonly calls = new Map<string, ApprovalRequest>();
+  private approvalAsked = false;
 
   map(event: TurnEvent): MoonEvent[] {
     switch (event.type) {
@@ -56,12 +76,27 @@ export class TurnEventMapper {
       case "thread.context_compaction_started":
         return [{ type: "notice", text: "compacting the conversation to fit the model's context" }];
 
-      case "tool.approval_required":
-        return [{ type: "notice", text: `waiting for approval of ${event.toolCalls.length} tool call(s)` }];
+      case "tool.approval_required": {
+        this.approvalAsked = true;
+        const requests = event.toolCalls.map(
+          (ref) =>
+            this.calls.get(ref.id) ?? {
+              toolCallId: ref.id,
+              threadId: event.threadId,
+              tool: "unknown",
+              args: {},
+              step: { action: "Tool call", target: "" },
+            },
+        );
+        return [{ type: "approval", requests: requests.map((r) => ({ ...r, threadId: event.threadId })) }];
+      }
 
       case "turn.done": {
         const state = event.state;
-        if (state.status === "done") return [{ type: "done", status: "done" }];
+        if (state.status === "done") {
+          const waiting = this.approvalAsked || (state.requiredActions?.length ?? 0) > 0;
+          return [{ type: "done", status: waiting ? "paused" : "done" }];
+        }
         if (state.status === "cancelled") return [{ type: "done", status: "cancelled", message: state.reason }];
         return [{ type: "done", status: "error", message: state.message }];
       }
@@ -74,14 +109,32 @@ export class TurnEventMapper {
   private finish(messageId: string): MoonEvent[] {
     const message = this.messages.get(messageId);
     this.messages.delete(messageId);
-    return (message?.toolCalls ?? []).map((call) => ({
-      type: "tool-call" as const,
-      id: call.id,
-      tool: call.function.name,
-      step: describeToolCall(call.toolInfo?.name ?? call.function.name, call.function.arguments),
-      subagent: message!.threadId !== MAIN_THREAD_ID,
-    }));
+    return (message?.toolCalls ?? []).map((call) => {
+      const { name, args } = resolveToolCall(call.toolInfo?.name ?? call.function.name, call.function.arguments);
+      const step = describeTool(name, args);
+      this.calls.set(call.id, { toolCallId: call.id, threadId: message!.threadId, tool: name, args, step });
+      return { type: "tool-call" as const, id: call.id, tool: name, step, subagent: message!.threadId !== MAIN_THREAD_ID };
+    });
   }
+}
+
+/**
+ * The tool really called and its arguments. With deferred tool loading the model may call a
+ * tool through TrueForge's wrapper, call_tool {mcp_server, tool_name, input}: that is unwrapped.
+ */
+export function resolveToolCall(toolName: string, argumentsJson: string): { name: string; args: Record<string, unknown> } {
+  let args: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(argumentsJson || "{}");
+    if (parsed && typeof parsed === "object") args = parsed as Record<string, unknown>;
+  } catch {
+    // arguments not valid JSON: describe the call without them
+  }
+  if (toolName === TRUEFORGE_CALL_TOOL && typeof args.tool_name === "string") {
+    const inner = args.input;
+    return { name: args.tool_name, args: inner && typeof inner === "object" ? (inner as Record<string, unknown>) : {} };
+  }
+  return { name: toolName, args };
 }
 
 /**
@@ -89,20 +142,16 @@ export class TurnEventMapper {
  * Other tools (TrueForge's own, e.g. list_tools) show their name as words: "List tools".
  */
 export function describeToolCall(toolName: string, argumentsJson: string): ToolStep {
-  const fallback = { action: humanize(toolName), target: "" };
+  const { name, args } = resolveToolCall(toolName, argumentsJson);
+  return describeTool(name, args);
+}
+
+function describeTool(name: string, args: Record<string, unknown>): ToolStep {
+  const tool = MOON_TOOLS.find((t) => t.name === name);
   try {
-    let name = toolName;
-    let args = JSON.parse(argumentsJson || "{}");
-    // With deferred tool loading the model may call a tool through TrueForge's wrapper:
-    // call_tool {mcp_server, tool_name, input}. Show the wrapped tool's own step.
-    if (name === TRUEFORGE_CALL_TOOL && typeof args?.tool_name === "string") {
-      name = args.tool_name;
-      args = args.input ?? {};
-    }
-    const tool = MOON_TOOLS.find((t) => t.name === name);
-    return tool ? tool.describe(args) : { action: humanize(name), target: "" };
+    return tool ? tool.describe(args as never) : { action: humanize(name), target: "" };
   } catch {
-    return fallback;
+    return { action: humanize(name), target: "" };
   }
 }
 

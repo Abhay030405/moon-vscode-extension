@@ -35,6 +35,19 @@
     "contextLines": 150,
     "maxProblems": 20
   },
+  "agentRun": {
+    "maxCopyFiles": 20000,
+    "maxCopyBytes": 300000000,
+    "commandTimeoutMs": 300000,
+    "commandOutputMaxChars": 12000,
+    "killGraceMs": 3000,
+    "commandEnv": {
+      "PYTHONPATH": "{copy}/src{pathSep}{copy}",
+      "PATH": "{project}/.venv/Scripts{pathSep}{project}/.venv/bin{pathSep}{env:PATH}"
+    },
+    "reviewContextLines": 3,
+    "reviewOutputChars": 2000
+  },
   "resilience": {
     "watchdogMs": 12000,
     "rateLimitRetries": 2,

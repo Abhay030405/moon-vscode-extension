@@ -1,27 +1,38 @@
-// The list of Moon's MCP tools, and the code that registers them on an MCP server.
+// The lists of Moon's MCP tools, and the code that registers them on an MCP server.
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { PathGuardError } from "../safety/path-guard.js";
+import { applyChangesTool } from "./apply-changes.js";
 import { ToolError, type ToolContext } from "./context.js";
+import { editFileTool } from "./edit-file.js";
 import { findDefinitionTool } from "./find-definition.js";
 import { findUsagesTool } from "./find-usages.js";
 import { getErrorsTool } from "./get-errors.js";
 import { listFilesTool } from "./list-files.js";
+import { listPendingChangesTool } from "./list-pending-changes.js";
 import { proposeEditTool } from "./propose-edit.js";
 import { readFileTool } from "./read-file.js";
+import { runCommandTool } from "./run-command.js";
 import { searchTextTool } from "./search-text.js";
 import { stepText, type MoonTool } from "./tool.js";
 
-/** Every Moon tool. Each agent definition picks the ones it may use (enableTools). */
-export const MOON_TOOLS: MoonTool[] = [
-  listFilesTool,
-  searchTextTool,
-  findDefinitionTool,
-  findUsagesTool,
-  readFileTool,
-  getErrorsTool,
-  proposeEditTool,
+/** Looking around: never changes anything. */
+const LOOK_TOOLS = [listFilesTool, searchTextTool, findDefinitionTool, findUsagesTool, readFileTool, getErrorsTool];
+
+/** The editor endpoint (inline edit): works on the real project. */
+export const EDITOR_TOOLS: MoonTool[] = [...LOOK_TOOLS, proposeEditTool] as MoonTool[];
+
+/** The agent endpoint (agent mode): works in the run's hidden copy. */
+export const AGENT_TOOLS: MoonTool[] = [
+  ...LOOK_TOOLS,
+  editFileTool,
+  listPendingChangesTool,
+  runCommandTool,
+  applyChangesTool,
 ] as MoonTool[];
+
+/** Every Moon tool (used for step labels in the live log). */
+export const MOON_TOOLS: MoonTool[] = [...new Set([...EDITOR_TOOLS, ...AGENT_TOOLS])];
 
 /** Reported for every tool call, so the extension can log what the agent did. */
 export interface ToolCallEvent {
@@ -34,11 +45,15 @@ export interface ToolCallEvent {
 
 export type ToolCallListener = (event: ToolCallEvent) => void;
 
+/**
+ * Registers `tools` on an MCP server. `context` is asked on every call, so agent mode can point
+ * the tools at the current run's copy (undefined = no run active: the call is refused).
+ */
 export function registerMoonTools(
   server: McpServer,
-  ctx: ToolContext,
+  context: () => ToolContext | undefined,
+  tools: readonly MoonTool[],
   onCall?: ToolCallListener,
-  tools: MoonTool[] = MOON_TOOLS,
 ): void {
   for (const tool of tools) {
     server.registerTool(
@@ -47,14 +62,16 @@ export function registerMoonTools(
         title: tool.title,
         description: tool.description,
         inputSchema: tool.input,
-        // No Moon tool deletes anything or reaches outside the project.
+        // No Moon tool deletes the user's files or reaches outside the project.
         annotations: { title: tool.title, readOnlyHint: tool.readOnly, destructiveHint: false, openWorldHint: false },
       },
-      async (args: Record<string, unknown>) => {
+      async (args: Record<string, unknown>, extra: { signal?: AbortSignal }) => {
         const started = Date.now();
         const summary = safeDescribe(tool, args);
         try {
-          const text = await tool.run(ctx, args as never);
+          const ctx = context();
+          if (!ctx) throw new ToolError("No agent run is active, so this tool cannot be used right now.");
+          const text = await tool.run(ctx, args as never, extra.signal);
           onCall?.({ tool: tool.name, summary, ok: true, durationMs: Date.now() - started });
           return { content: [{ type: "text" as const, text }] };
         } catch (err) {

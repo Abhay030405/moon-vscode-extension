@@ -60,3 +60,34 @@ export const STATUS_MESSAGE_MS = 6000;
 
 /** TrueForge's wrapper tool for calling a deferred tool: call_tool {mcp_server, tool_name, input}. */
 export const TRUEFORGE_CALL_TOOL = "call_tool";
+
+/** Agent mode's MCP endpoint is the editor endpoint's path plus this, registered under the name + this. */
+export const AGENT_ENDPOINT_SUFFIX = "-agent";
+
+/** Folder (inside the system temp folder) that holds the hidden copies of agent runs. */
+export const RUNS_TEMP_DIR = "moon-runs";
+/** Deleting a run's copy: retries (and delay) while a just-killed process still holds files. */
+export const RUN_DIR_REMOVE_RETRIES = 10;
+export const RUN_DIR_REMOVE_RETRY_MS = 200;
+
+/**
+ * Commands the approval card warns about. Each: a pattern (case-insensitive) and why it is risky.
+ * The user still decides; this only highlights.
+ */
+export const RISKY_COMMAND_PATTERNS: readonly { pattern: string; reason: string }[] = [
+  { pattern: String.raw`\brm\s+(-\w*[rf]\w*\s+)+`, reason: "deletes files (rm -r / -f)" },
+  { pattern: String.raw`\b(del|erase)\b.*\s/[sq]\b`, reason: "deletes files (del /s)" },
+  { pattern: String.raw`\b(rmdir|rd)\b.*\s/s\b`, reason: "deletes folders (rmdir /s)" },
+  { pattern: String.raw`\bRemove-Item\b`, reason: "deletes files (Remove-Item)" },
+  { pattern: String.raw`\b(curl|wget|Invoke-WebRequest|iwr|Invoke-RestMethod|irm)\b`, reason: "downloads or sends data over the network" },
+  { pattern: String.raw`\b(scp|ssh|ftp|nc|ncat|netcat)\b`, reason: "connects to another machine" },
+  { pattern: String.raw`\bgit\s+(push|reset\s+--hard|clean\b|rebase|checkout\s+--|filter-branch|reflog\s+expire)`, reason: "changes git history or discards work" },
+  { pattern: String.raw`\b(pip|pip3|npm|pnpm|yarn)\s+(install|add|uninstall|remove)\b`, reason: "installs or removes packages" },
+  { pattern: String.raw`\b(sudo|runas|chmod|chown|icacls|takeown)\b`, reason: "changes permissions or runs as another user" },
+  { pattern: String.raw`\b(format|mkfs|diskpart|shutdown|reboot)\b`, reason: "affects the whole machine" },
+  { pattern: String.raw`(^|[\s"'=])(\.\.[\/]|~[\/]|[a-z]:[\/]|/(etc|usr|bin|home|Users|var|tmp)\b)`, reason: "touches a path outside the project" },
+  { pattern: String.raw`\.env\b|id_rsa|\.ssh\b|\.aws\b|credentials`, reason: "touches secrets or keys" },
+];
+
+/** In the report after review, each rejected hunk is shown by its first this-many lines. */
+export const REJECTED_HUNK_PREVIEW_LINES = 3;

@@ -14,8 +14,11 @@ export interface MoonTool<Shape extends z.ZodRawShape = z.ZodRawShape> {
   input: Shape;
   /** True when the tool only reads; TrueForge then never pauses it for approval. */
   readOnly: boolean;
-  /** Runs the tool. Returns the text the agent sees; throws ToolError for clear failures. */
-  run(ctx: ToolContext, args: z.infer<z.ZodObject<Shape>>): string | Promise<string>;
+  /**
+   * Runs the tool. Returns the text the agent sees; throws ToolError for clear failures.
+   * `signal` aborts when TrueForge cancels the call.
+   */
+  run(ctx: ToolContext, args: z.infer<z.ZodObject<Shape>>, signal?: AbortSignal): string | Promise<string>;
   /** One step for Moon's live log, e.g. { action: "Read", target: "src/app.py:1-80" }. */
   describe(args: Partial<z.infer<z.ZodObject<Shape>>>): ToolStep;
 }

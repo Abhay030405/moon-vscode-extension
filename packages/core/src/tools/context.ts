@@ -7,6 +7,8 @@ import { PathGuard } from "../safety/path-guard.js";
 import { SecretGuard } from "../safety/secret-guard.js";
 import type { MoonConfig } from "../shared/config.js";
 import { BINARY_SNIFF_BYTES } from "../shared/constants.js";
+import type { RunResult } from "../process/runner.js";
+import type { ShadowCopy } from "../workspace/shadow-copy.js";
 
 export class ToolError extends Error {
   override readonly name = "ToolError";
@@ -32,6 +34,21 @@ export interface EditorBridge {
   diagnostics(rel?: string): EditorDiagnostic[];
 }
 
+/** What agent-mode tools need from the running agent run (set only on agent mode's tool context). */
+export interface AgentRunHooks {
+  /** The hidden copy the agent works in (also this context's root). */
+  copy: ShadowCopy;
+  /** Aborted when the user presses Stop: kills a running command. */
+  signal: AbortSignal;
+  /** Every finished command, for the review screen's test results. */
+  onCommand?(result: RunResult): void;
+  /**
+   * Runs after the user approved apply_changes in TrueForge: writes the accepted changes to
+   * the real project and returns the report the agent sees (applied and rejected hunks).
+   */
+  applyApproved(summary: string): Promise<string>;
+}
+
 /** The running inline edit: the one file propose_edit may change, and where the proposal goes. */
 export interface InlineTarget {
   /** Project-relative path of the file being edited. */
@@ -49,11 +66,15 @@ export class ToolContext {
   editor: EditorBridge | undefined;
   /** Set only while an inline edit runs. */
   inlineTarget: InlineTarget | undefined;
+  /** Set only on agent mode's context, for the run it belongs to. */
+  agentRun: AgentRunHooks | undefined;
+  readonly runSettings: MoonConfig["agentRun"];
 
-  constructor(root: string, config: Pick<MoonConfig, "tools" | "safety">) {
+  constructor(root: string, config: Pick<MoonConfig, "tools" | "safety" | "agentRun">) {
     this.paths = new PathGuard(root);
     this.secrets = new SecretGuard(config.safety);
     this.limits = config.tools;
+    this.runSettings = config.agentRun;
     this.ignoredDirs = new Set(config.tools.ignoredDirs);
   }
 
