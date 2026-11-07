@@ -1,7 +1,9 @@
 // edit_file: changes a file in the hidden copy (never the real project).
 // Existing files: exact find/replace edits. New files only: the whole content.
+// Refused until the agent called report_context in this run (the context card comes first).
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { REPORT_CONTEXT_TOOL } from "../shared/constants.js";
 import * as path from "node:path";
 import { z } from "zod";
 import { lineCounts } from "../workspace/change-tracker.js";
@@ -28,6 +30,9 @@ export const editFileTool = defineTool({
   readOnly: false,
   run(ctx, args) {
     if (!ctx.agentRun) throw new ToolError("edit_file only works in agent mode.");
+    if (!ctx.contextReported) {
+      throw new ToolError(`Call ${REPORT_CONTEXT_TOOL} first: tell the user which files you chose and why, then edit.`);
+    }
     if ((args.edits === undefined) === (args.content === undefined)) {
       throw new ToolError("Give either `edits` (existing file) or `content` (new file), not both.");
     }

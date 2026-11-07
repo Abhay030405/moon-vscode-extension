@@ -69,6 +69,11 @@ export class ToolContext {
   /** Set only on agent mode's context, for the run it belongs to. */
   agentRun: AgentRunHooks | undefined;
   readonly runSettings: MoonConfig["agentRun"];
+  /**
+   * True once the agent called report_context in this run. edit_file waits for it, so the user
+   * always sees which files the agent chose (and why) before the first change.
+   */
+  contextReported = false;
 
   constructor(root: string, config: Pick<MoonConfig, "tools" | "safety" | "agentRun">) {
     this.paths = new PathGuard(root);

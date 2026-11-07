@@ -56,6 +56,8 @@ beforeEach(() => {
     editor: { openText: (abs) => (abs.endsWith(path.join("src", "old.py")) ? "x = 1  # unsaved\n" : undefined), diagnostics: () => [] },
     applyApproved: async () => "applied",
   });
+  // Edits need the chosen files reported first (tested on its own below).
+  run.tools.contextReported = true;
 });
 
 afterEach(() => {
