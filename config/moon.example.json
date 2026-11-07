@@ -61,7 +61,13 @@
     "mapBudgetRatio": 0.1,
     "mapBudgetMinTokens": 1000,
     "mapBudgetMaxTokens": 8000,
-    "fallbackContextLength": 50000
+    "fallbackContextLength": 50000,
+    "compactionRatio": 0.8,
+    "mapMaxFiles": 5000,
+    "rulesMaxTokens": 2000,
+    "mentionMaxTokens": 6000,
+    "symbolMaxLines": 120,
+    "pickerMaxResults": 30
   },
   "tools": {
     "searchMaxResults": 50,
