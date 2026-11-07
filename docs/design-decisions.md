@@ -154,6 +154,15 @@ Last updated: 5 November 2026
 - Search, read and run-command tools already work for every language.
 - VS Code's own symbol list (from installed language extensions) is **not** the main path: it depends on the user's extensions and can be slow.
 
+### 3.4b How it was built (7 Nov)
+
+- **Delivery:** the project rules and map go in the agent spec's `messages` (an opening user message TrueForge injects when the session is created), so they never appear inside the user's own message. `@`-mention content is added to the user's turn. Compaction's trigger is set from the same window number (`context.compactionRatio`).
+- **Window size:** from TrueForge's model list (`contextLength`), else `context.fallbackContextLength`.
+- **Parsing:** `web-tree-sitter` (WebAssembly, so no native build on any OS) with grammars from `tree-sitter-wasms`, and Aider's tag queries (copied, credited in NOTICE.md). The cache (by file size + modification time) is in VS Code's storage folder for Moon, never in the project.
+- **Ranking:** PageRank over "file A uses a name defined in file B", with most of the starting rank on files that match the request, then multiplied by how well each file matches. Request words are weighted by rarity (a word in every path, like the project's name, counts for little), filler words are ignored, an exact name from the request (`get_debug_flag`) counts most, and word endings only match when short ("test"/"tests", not "help"/"helpers"). Checked on Flask: Task B puts `cli.py` and `test_cli.py` in the top 4; `get_debug_flag` puts `helpers.py` first.
+- **Scout:** TrueForge v0.184 has **no predefined subagents**, only *dynamic* ones the agent starts itself (`dynamicSubAgents`). So the scout is a brief in the agent instructions (`agents/moon-scout.md`) that the agent passes to a subagent it starts. Seen live: the scout ran 6 searches in its own thread.
+- **Showing the choice:** a look-only MCP tool, `report_context({files: [{path, reason}]})`, which the agent calls before its first edit. Moon turns the call into the panel's **context card**; the reasons are the agent's. The tool refuses files that do not exist, so the card can't show made-up paths. The card also shows the map's budget bar ("map 5.9k / 8k tokens"), the rules file and each `@`-mention (whole file / outline / definition).
+
 ### 3.5 TrueForge context features (B4)
 
 **Decided**
