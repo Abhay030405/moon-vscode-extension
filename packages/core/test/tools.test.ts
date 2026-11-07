@@ -8,7 +8,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   CONFIG_DIR,
   EXAMPLE_CONFIG_FILE_NAME,
+  AGENT_TOOLS,
+  EDITOR_TOOLS,
   MOON_TOOLS,
+  endpointNames,
   PathGuard,
   PathGuardError,
   SecretGuard,
@@ -18,6 +21,7 @@ import {
   startMcpServer,
   wrapUntrusted,
   type MoonConfig,
+  type McpEndpoint,
   type MoonTool,
   type ToolCallEvent,
 } from "../src/index.js";
@@ -175,14 +179,22 @@ describe("read_file", () => {
 });
 
 describe("MCP server", () => {
-  it("serves the tools over streamable HTTP and reports each call", async () => {
+  const endpoints = (agentCtx?: ToolContext): McpEndpoint[] => {
+    const names = endpointNames(config.mcp);
+    return [
+      { name: names.editor, path: names.editorPath, tools: EDITOR_TOOLS, context: () => ctx },
+      { name: names.agent, path: names.agentPath, tools: AGENT_TOOLS, context: () => agentCtx },
+    ];
+  };
+
+  it("serves the editor tools over streamable HTTP and reports each call", async () => {
     const events: ToolCallEvent[] = [];
-    const server = await startMcpServer({ ...config.mcp, port: 0 }, ctx, (e) => events.push(e));
+    const server = await startMcpServer({ ...config.mcp, port: 0 }, endpoints(), (e) => events.push(e));
     const client = new Client({ name: "moon-test", version: "0.0.0" });
     try {
-      await client.connect(new StreamableHTTPClientTransport(new URL(server.url)));
+      await client.connect(new StreamableHTTPClientTransport(new URL(server.urls[config.mcp.serverName]!)));
       const { tools } = await client.listTools();
-      expect(tools.map((t) => t.name).sort()).toEqual(MOON_TOOLS.map((t) => t.name).sort());
+      expect(tools.map((t) => t.name).sort()).toEqual(EDITOR_TOOLS.map((t) => t.name).sort());
       // Only propose_edit is not read-only; none is destructive (so TrueForge's "@destructive" never matches).
       expect(tools.filter((t) => t.annotations?.readOnlyHint !== true).map((t) => t.name)).toEqual(["propose_edit"]);
       expect(tools.every((t) => t.annotations?.destructiveHint === false)).toBe(true);
@@ -205,10 +217,26 @@ describe("MCP server", () => {
     }
   });
 
-  it("only answers on the configured path", async () => {
-    const server = await startMcpServer({ ...config.mcp, port: 0 }, ctx);
+  it("serves the agent tools on the agent endpoint, refusing calls when no run is active", async () => {
+    const server = await startMcpServer({ ...config.mcp, port: 0 }, endpoints(undefined));
+    const client = new Client({ name: "moon-test", version: "0.0.0" });
     try {
-      const wrong = server.url.replace(config.mcp.path, "/other");
+      await client.connect(new StreamableHTTPClientTransport(new URL(server.urls[endpointNames(config.mcp).agent]!)));
+      const { tools } = await client.listTools();
+      expect(tools.map((t) => t.name).sort()).toEqual(AGENT_TOOLS.map((t) => t.name).sort());
+      const refused = await client.callTool({ name: "read_file", arguments: { path: "src/app.py" } });
+      expect(refused.isError).toBe(true);
+      expect(JSON.stringify(refused.content)).toContain("No agent run is active");
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it("only answers on the configured paths", async () => {
+    const server = await startMcpServer({ ...config.mcp, port: 0 }, endpoints());
+    try {
+      const wrong = server.urls[config.mcp.serverName]!.replace(config.mcp.path, "/other");
       expect((await fetch(wrong, { method: "POST" })).status).toBe(404);
     } finally {
       await server.close();

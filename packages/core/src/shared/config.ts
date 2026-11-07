@@ -59,6 +59,28 @@ export const MoonConfigSchema = z
       /** Most editor problems (errors, warnings) sent with an inline edit. */
       maxProblems: z.number().int().min(0),
     }),
+    agentRun: z.strictObject({
+      /** The hidden copy refuses projects with more files than this (after skipping ignored folders). */
+      maxCopyFiles: positiveInt,
+      /** ...or more bytes than this. */
+      maxCopyBytes: positiveInt,
+      /** A command the agent runs is stopped after this long. */
+      commandTimeoutMs: positiveInt,
+      /** Only the last this-many characters of a command's output go to the agent. */
+      commandOutputMaxChars: positiveInt,
+      /** On Stop or timeout: ask the command to end, then force-kill after this long (macOS/Linux). */
+      killGraceMs: positiveInt,
+      /**
+       * Extra environment variables for commands run in the hidden copy. Placeholders:
+       * {copy} = the copy's folder, {project} = the real project folder,
+       * {pathSep} = ";" on Windows, ":" elsewhere, {env:NAME} = the current value of NAME.
+       */
+      commandEnv: z.record(z.string(), z.string()),
+      /** Unchanged lines shown above and below each change in the review screen. */
+      reviewContextLines: z.number().int().min(0),
+      /** Characters of each command's output (its end) shown with the test results in the review. */
+      reviewOutputChars: positiveInt,
+    }),
     resilience: z.strictObject({
       /** No streamed event within this time after sending: cancel and switch to backup. */
       watchdogMs: positiveInt,
