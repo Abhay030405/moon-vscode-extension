@@ -102,6 +102,18 @@ export const MoonConfigSchema = z
       mapBudgetMaxTokens: positiveInt,
       /** Window size to assume when TrueForge reports none for the model. */
       fallbackContextLength: positiveInt,
+      /** TrueForge compacts the conversation when its input reaches this share of the window. */
+      compactionRatio: z.number().gt(0).lte(1),
+      /** The map parses at most this many files (largest projects are mapped partly). */
+      mapMaxFiles: positiveInt,
+      /** Most tokens of the project's AGENTS.md / CLAUDE.md given to the agent. */
+      rulesMaxTokens: positiveInt,
+      /** An @file larger than this is given as its outline instead of its full text. */
+      mentionMaxTokens: positiveInt,
+      /** An @symbol is given as at most this many lines of its definition. */
+      symbolMaxLines: positiveInt,
+      /** Most entries the @ picker shows. */
+      pickerMaxResults: positiveInt,
     }),
     tools: z.strictObject({
       /** Most matches search_text / find_usages / find_definition return. */

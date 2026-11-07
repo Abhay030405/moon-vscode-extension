@@ -91,3 +91,56 @@ export const RISKY_COMMAND_PATTERNS: readonly { pattern: string; reason: string 
 
 /** In the report after review, each rejected hunk is shown by its first this-many lines. */
 export const REJECTED_HUNK_PREVIEW_LINES = 3;
+
+/** Rough token count of text: characters divided by this (good enough for budgets). */
+export const CHARS_PER_TOKEN = 4;
+
+/** Project rule files given to the agent if present (the first one found is used). */
+export const PROJECT_RULE_FILES: readonly string[] = ["AGENTS.md", "CLAUDE.md"];
+
+/** Languages the project map parses, by file extension, and their tree-sitter grammar / query files. */
+export const MAP_LANGUAGES: Readonly<Record<string, { grammar: string; query: string }>> = {
+  ".py": { grammar: "tree-sitter-python.wasm", query: "python-tags.scm" },
+  ".js": { grammar: "tree-sitter-javascript.wasm", query: "javascript-tags.scm" },
+  ".mjs": { grammar: "tree-sitter-javascript.wasm", query: "javascript-tags.scm" },
+  ".cjs": { grammar: "tree-sitter-javascript.wasm", query: "javascript-tags.scm" },
+  ".jsx": { grammar: "tree-sitter-javascript.wasm", query: "javascript-tags.scm" },
+  ".ts": { grammar: "tree-sitter-typescript.wasm", query: "typescript-tags.scm" },
+  ".mts": { grammar: "tree-sitter-typescript.wasm", query: "typescript-tags.scm" },
+  ".cts": { grammar: "tree-sitter-typescript.wasm", query: "typescript-tags.scm" },
+  ".tsx": { grammar: "tree-sitter-tsx.wasm", query: "typescript-tags.scm" },
+};
+
+/** Lines longer than this mark a generated or minified file, which the map skips. */
+export const MAP_MAX_LINE_LENGTH = 1000;
+/** Bump when the cached map format changes, so old caches are ignored. */
+export const MAP_CACHE_VERSION = 1;
+/** PageRank: rounds and damping (the share of rank that follows references). */
+export const RANK_ITERATIONS = 25;
+export const RANK_DAMPING = 0.85;
+/** Words shorter than this in the user's request are ignored when ranking. */
+export const RANK_MIN_WORD_LENGTH = 3;
+/** The file that matches the request best gets this many times its rank added (Aider uses 10x too). */
+export const RANK_FOCUS_BOOST = 10;
+/** Match weights: a name from the request defined in the file (or an @-named file), and a request word inside a defined name (a word in the path counts 1 x its rarity). */
+export const RANK_EXACT_NAME_WEIGHT = 2;
+export const RANK_NAME_WORD_WEIGHT = 0.1;
+/** Common words in requests that say nothing about which files matter. */
+export const RANK_STOP_WORDS: ReadonlySet<string> = new Set(
+  ("the and for with that this from into have has had should would could will can are was were not but all any " +
+    "add adds added make makes use uses using new also when then than them they its it's our your you please " +
+    "need needs want wants like just only each every some more most other such what which who how why where " +
+    "there here about above after before over under again same so very does did done get gets got let lets")
+    .split(" "),
+);
+/** Share of the starting rank given to files that match the request. */
+export const RANK_FOCUS_SHARE = 0.9;
+/** Two words match as one with an ending if the shorter has at least this many letters... */
+export const RANK_MIN_PREFIX_LENGTH = 4;
+/** ...and the longer adds at most this many ("test" / "tests", but not "help" / "helpers"). */
+export const RANK_MAX_SUFFIX_LENGTH = 2;
+/** Most names listed under one file in the map. */
+export const MAP_MAX_NAMES_PER_FILE = 12;
+
+/** The tool the agent calls to report the files it chose (the panel shows them as the context card). */
+export const REPORT_CONTEXT_TOOL = "report_context";
