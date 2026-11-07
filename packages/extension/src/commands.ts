@@ -19,6 +19,12 @@ export const INLINE_COMMANDS = {
   rejectAll: "moon.inlineEdit.rejectAll",
 } as const;
 
+/** Agent-mode review. */
+export const REVIEW_COMMANDS = {
+  /** Opens one file under review in VS Code's diff editor (CodeLens in the file). */
+  showDiff: "moon.agentReview.showDiff",
+} as const;
+
 /** Context keys used in package.json "when" clauses. */
 export const CONTEXT_KEYS = {
   /** True while an inline edit is waiting for the agent (Escape = Stop). */

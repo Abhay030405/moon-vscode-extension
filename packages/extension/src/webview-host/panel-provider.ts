@@ -3,24 +3,36 @@
 
 import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
-import type { AgentChat } from "@moon/core";
-import type { ExtensionToPanel, MoonEvent, PanelToExtension } from "@moon/webview-ui/protocol";
+import type { ExtensionToPanel, PanelToExtension } from "@moon/webview-ui/protocol";
+import { AgentSession } from "../agent-run/agent-session.js";
 import type { MoonService } from "../agent-run/moon-service.js";
+import { REVIEW_COMMANDS } from "../commands.js";
+import { PendingChangesDecorations } from "../review/pending-decorations.js";
+import { ReviewInEditor } from "../review/review-in-editor.js";
 
 export const PANEL_VIEW_ID = "moon.panel";
 
 export class MoonPanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   private view: vscode.WebviewView | undefined;
   /** The panel's current chat. A new chat id replaces it (and stops it if running). */
-  private chat: { id: string; agent: AgentChat | undefined } | undefined;
-  private readonly disposables: vscode.Disposable[] = [];
+  private chat: { id: string; agent: AgentSession | undefined } | undefined;
+  /** Explorer dots on files waiting in the agent-mode review. */
+  private readonly pending = new PendingChangesDecorations();
+  /** Red lines, green notes and "Show diff" lenses in files under review. */
+  private readonly inEditor: ReviewInEditor;
+  private readonly disposables: vscode.Disposable[] = [this.pending];
 
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly service: MoonService,
     private readonly output: vscode.OutputChannel,
   ) {
-    this.disposables.push(vscode.workspace.onDidChangeWorkspaceFolders(() => this.postState()));
+    this.inEditor = new ReviewInEditor(() => this.service.projectRoot());
+    this.disposables.push(
+      this.inEditor,
+      vscode.workspace.onDidChangeWorkspaceFolders(() => this.postState()),
+      vscode.commands.registerCommand(REVIEW_COMMANDS.showDiff, (rel: string) => this.chat?.agent?.openDiff(rel)),
+    );
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -55,24 +67,49 @@ export class MoonPanelProvider implements vscode.WebviewViewProvider, vscode.Dis
         await this.send(message.chatId, message.text);
         return;
     }
+    // The rest act on the current chat's agent session.
+    const agent = this.chat?.id === message.chatId ? this.chat.agent : undefined;
+    if (!agent) return;
+    switch (message.type) {
+      case "command-decision":
+        agent.commandDecision(message.requestId, message.decision);
+        return;
+      case "review-apply":
+        agent.reviewApply(message.accepted);
+        return;
+      case "review-discard":
+        agent.reviewDiscard();
+        return;
+      case "open-diff":
+        await agent.openDiff(message.rel);
+        return;
+      case "undo-run":
+        await agent.undo();
+        return;
+    }
   }
 
   private async send(chatId: string, text: string): Promise<void> {
-    const emit = (event: MoonEvent) => this.post({ type: "event", chatId, event });
     if (this.chat?.id !== chatId) {
       this.chat?.agent?.stop();
       this.chat = { id: chatId, agent: undefined };
     }
     const chat = this.chat;
     try {
-      chat.agent ??= await this.service.createChat();
+      chat.agent ??= await AgentSession.create(chatId, {
+        service: this.service,
+        post: (message) => this.post(message),
+        output: this.output,
+        pending: this.pending,
+        inEditor: this.inEditor,
+      });
     } catch (err) {
-      emit({ type: "done", status: "error", message: (err as Error).message });
+      this.post({ type: "event", chatId, event: { type: "done", status: "error", message: (err as Error).message } });
       return;
     }
     // The user may have started a new chat while this one was being created.
     if (this.chat !== chat) return;
-    await chat.agent.send(text, emit);
+    await chat.agent.send(text);
   }
 
   private postState(): void {

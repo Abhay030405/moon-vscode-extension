@@ -2,7 +2,7 @@
 // An agent turn is a list of parts in the order they arrived: answer text and live-log lines
 // can interleave (the agent may say something, call tools, then answer).
 
-import type { MoonEvent, PanelSettings, TypingSettings } from "../protocol/messages";
+import type { CommandApprovalView, ExtensionToPanel, MoonEvent, PanelSettings, ReviewView, TypingSettings } from "../protocol/messages";
 
 export interface LogLine {
   id: string;
@@ -16,7 +16,13 @@ export interface LogLine {
 
 export type TurnPart = { kind: "text"; text: string } | { kind: "log"; lines: LogLine[] };
 
-export type TurnStatus = "running" | "done" | "cancelled" | "error";
+/** "waiting": TrueForge paused the turn until the user answers an approval (command or review). */
+export type TurnStatus = "running" | "waiting" | "done" | "cancelled" | "error";
+
+/** The result of the last apply, shown under the conversation. */
+export type ApplyNotice =
+  | { kind: "applied"; files: number; hunks: number; undoable: boolean }
+  | { kind: "undone"; files: number };
 
 export type Entry =
   | { kind: "user"; text: string }
@@ -32,13 +38,22 @@ export interface ChatState {
   configuredModel?: string;
   projectName?: string;
   typing?: TypingSettings;
+  /** A command waiting for the user's approval. */
+  approval?: CommandApprovalView;
+  /** The review screen (the agent called apply_changes). */
+  review?: ReviewView;
+  applyNotice?: ApplyNotice;
 }
+
+/** Extension messages that belong to one chat. */
+type ChatMessage = Extract<ExtensionToPanel, { chatId: string }>;
 
 export type ChatAction =
   | { type: "sent"; text: string }
   | { type: "new-chat"; chatId: string }
   | { type: "settings"; settings: PanelSettings }
-  | { type: "event"; chatId: string; event: MoonEvent };
+  | { type: "message"; message: ChatMessage }
+  | { type: "undo-sent" };
 
 export const newChatId = (): string => crypto.randomUUID();
 
@@ -48,7 +63,7 @@ export function initialState(): ChatState {
 
 export function isRunning(state: ChatState): boolean {
   const last = state.entries.at(-1);
-  return last?.kind === "agent" && last.status === "running";
+  return last?.kind === "agent" && (last.status === "running" || last.status === "waiting");
 }
 
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
@@ -70,9 +85,27 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       const { projectName, typing, model } = action.settings;
       return { ...state, projectName, typing, configuredModel: model };
     }
+    case "message":
+      if (action.message.chatId !== state.chatId) return state; // late message from a chat that was replaced
+      return applyMessage(state, action.message);
+    case "undo-sent":
+      // The button goes away at once so it is not pressed twice.
+      return state.applyNotice?.kind === "applied" ? { ...state, applyNotice: { ...state.applyNotice, undoable: false } } : state;
+  }
+}
+
+function applyMessage(state: ChatState, message: ChatMessage): ChatState {
+  switch (message.type) {
     case "event":
-      if (action.chatId !== state.chatId) return state; // late event from a chat that was replaced
-      return applyEvent(state, action.event);
+      return applyEvent(state, message.event);
+    case "command-approval":
+      return { ...state, approval: message.approval };
+    case "review":
+      return { ...state, review: message.review };
+    case "applied":
+      return { ...state, applyNotice: { kind: "applied", files: message.files, hunks: message.hunks, undoable: message.undoable } };
+    case "undone":
+      return { ...state, applyNotice: { kind: "undone", files: message.files } };
   }
 }
 
@@ -81,6 +114,8 @@ function applyEvent(state: ChatState, event: MoonEvent): ChatState {
   const last = state.entries.at(-1);
   if (last?.kind !== "agent") return state;
   const turn = { ...last, parts: [...last.parts] };
+  // The agent continues after the user answered an approval.
+  if (turn.status === "waiting" && event.type !== "done") turn.status = "running";
 
   switch (event.type) {
     case "text":
@@ -110,6 +145,10 @@ function applyEvent(state: ChatState, event: MoonEvent): ChatState {
       });
       break;
     case "done":
+      if (event.status === "paused") {
+        turn.status = "waiting";
+        break; // tool calls waiting for approval are still open
+      }
       turn.status = event.status;
       if (event.status === "error") turn.error = event.message;
       // Tool calls still "running" when a turn ends will never finish.

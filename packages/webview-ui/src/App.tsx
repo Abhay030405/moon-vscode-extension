@@ -7,6 +7,9 @@ import { MoonMark } from "./brand/MoonMark";
 import { ChatView } from "./chat/ChatView";
 import { Composer } from "./chat/Composer";
 import { chatReducer, initialState, isRunning, newChatId } from "./chat/chat-state";
+import { CommandApproval } from "./approval-card/CommandApproval";
+import { AppliedNotice } from "./review/AppliedNotice";
+import { ReviewScreen } from "./review/ReviewScreen";
 import { onExtensionMessage, postToExtension } from "./vscode-api";
 
 export function App() {
@@ -18,7 +21,7 @@ export function App() {
   useEffect(() => {
     const unsubscribe = onExtensionMessage((message) => {
       if (message.type === "state") dispatch({ type: "settings", settings: message });
-      else dispatch({ type: "event", chatId: message.chatId, event: message.event });
+      else dispatch({ type: "message", message });
     });
     postToExtension({ type: "ready" });
     return unsubscribe;
@@ -65,13 +68,44 @@ export function App() {
           <NewChatIcon />
         </button>
       </header>
-      <ChatView
-        entries={state.entries}
-        typing={state.typing}
-        projectName={state.projectName}
-        canSend={canSend}
-        onSend={send}
-      />
+      {state.review ? (
+        <ReviewScreen
+          key={JSON.stringify(state.review.files.map((f) => f.rel))}
+          review={state.review}
+          onApply={(accepted) => postToExtension({ type: "review-apply", chatId: state.chatId, accepted })}
+          onDiscard={() => postToExtension({ type: "review-discard", chatId: state.chatId })}
+          onOpenDiff={(rel) => postToExtension({ type: "open-diff", chatId: state.chatId, rel })}
+        />
+      ) : (
+        <ChatView
+          entries={state.entries}
+          typing={state.typing}
+          projectName={state.projectName}
+          canSend={canSend}
+          onSend={send}
+          footer={
+            <>
+              {state.applyNotice && (
+                <AppliedNotice
+                  notice={state.applyNotice}
+                  onUndo={() => {
+                    dispatch({ type: "undo-sent" });
+                    postToExtension({ type: "undo-run", chatId: state.chatId });
+                  }}
+                />
+              )}
+              {state.approval && (
+                <CommandApproval
+                  approval={state.approval}
+                  onDecide={(decision) =>
+                    postToExtension({ type: "command-decision", chatId: state.chatId, requestId: state.approval!.requestId, decision })
+                  }
+                />
+              )}
+            </>
+          }
+        />
+      )}
       <Composer
         running={running}
         projectName={state.projectName}

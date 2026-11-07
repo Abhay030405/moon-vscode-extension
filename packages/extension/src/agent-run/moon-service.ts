@@ -1,6 +1,9 @@
 // Owns Moon's MCP server for the open folder and creates agent chats and inline edits on TrueForge.
 //
 // - The MCP server starts on the first chat (not at VS Code start-up), on a free local port.
+// - It has two endpoints, registered in TrueForge as two MCP servers: the editor endpoint
+//   (inline edit, works on the real project) and the agent endpoint (agent mode, works in the
+//   current agent run's hidden copy; refuses calls when no run is active).
 // - Before every new TrueForge session Moon re-registers the server's URL with TrueForge
 //   (create-or-update, cheap), so a restarted TrueForge or a new port is always picked up.
 // - The config is read fresh for each new chat, so edits apply without reloading VS Code.
@@ -9,6 +12,10 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import {
   AgentChat,
+  AGENT_TOOLS,
+  AgentRun,
+  EDITOR_TOOLS,
+  endpointNames,
   loadMoonConfig,
   modelRef,
   MOON_MCP_DESCRIPTION,
@@ -25,6 +32,8 @@ import { resolveConfigPath } from "../status/moon-setup.js";
 
 export class MoonService implements vscode.Disposable {
   private server: { root: string; mcp: RunningMcpServer; tools: ToolContext } | undefined;
+  /** The agent run the agent endpoint's tools work in (one at a time: the panel's chat). */
+  private activeRun: AgentRun | undefined;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -50,8 +59,13 @@ export class MoonService implements vscode.Disposable {
   }
 
   /** Starts a new chat in the Moon panel (agent mode). */
-  async createChat(): Promise<AgentChat> {
-    return (await this.prepare("agent")).chat;
+  async createChat(): Promise<{ chat: AgentChat; config: MoonConfig }> {
+    return this.prepare("agent");
+  }
+
+  /** Points the agent endpoint's tools at this run (undefined = refuse calls). */
+  setActiveRun(run: AgentRun | undefined): void {
+    this.activeRun = run;
   }
 
   /**
@@ -71,7 +85,10 @@ export class MoonService implements vscode.Disposable {
     const server = await this.ensureServer(root, config);
 
     const client = new TrueForgeClient(config.trueforge);
-    await registerMcpServer(client, { name: config.mcp.serverName, url: server.mcp.url, description: MOON_MCP_DESCRIPTION });
+    const names = endpointNames(config.mcp);
+    for (const name of [names.editor, names.agent]) {
+      await registerMcpServer(client, { name, url: server.mcp.urls[name]!, description: MOON_MCP_DESCRIPTION });
+    }
 
     const definition = kind === "agent" ? config.agent.definitionFile : config.agent.inlineDefinitionFile;
     const chat = new AgentChat({
@@ -79,7 +96,7 @@ export class MoonService implements vscode.Disposable {
       // The definition path in config is relative to the Moon repo root (the folder above config/).
       definitionFile: path.resolve(path.dirname(configPath), "..", definition),
       model: modelRef(config.models.main),
-      mcpServer: config.mcp.serverName,
+      mcpServer: kind === "agent" ? names.agent : names.editor,
       baseUrl: config.trueforge.baseUrl,
       sessionUrlTemplate: config.trueforge.sessionUrlTemplate,
     });
@@ -91,11 +108,16 @@ export class MoonService implements vscode.Disposable {
     await this.server?.mcp.close();
     const tools = new ToolContext(root, config);
     tools.editor = new VsCodeEditorBridge(root);
-    const mcp = await startMcpServer(config.mcp, tools, (call) => {
+    const names = endpointNames(config.mcp);
+    const endpoints = [
+      { name: names.editor, path: names.editorPath, tools: EDITOR_TOOLS, context: () => tools },
+      { name: names.agent, path: names.agentPath, tools: AGENT_TOOLS, context: () => this.activeRun?.tools },
+    ];
+    const mcp = await startMcpServer(config.mcp, endpoints, (call) => {
       const status = call.ok ? "ok" : `refused: ${call.error}`;
       this.output.appendLine(`[tool] ${call.summary} (${call.durationMs} ms) ${status}`);
     });
-    this.output.appendLine(`[${new Date().toLocaleTimeString()}] Moon MCP server for ${root} at ${mcp.url}`);
+    this.output.appendLine(`[${new Date().toLocaleTimeString()}] Moon MCP server for ${root} at ${Object.values(mcp.urls).join(", ")}`);
     this.server = { root, mcp, tools };
     return this.server;
   }
