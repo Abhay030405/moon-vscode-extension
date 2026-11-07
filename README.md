@@ -124,11 +124,18 @@ Real config files are git-ignored; only the `*.example.json` files are committed
 | `trueforge.sessionUrlTemplate` | Link to a session in TrueForge's UI; `{baseUrl}` and `{sessionId}` are filled in |
 | `models.main`, `models.backup` | `provider` and `model` names as registered in TrueForge |
 | `mcp.host`, `mcp.port`, `mcp.path` | Where Moon's MCP server listens. `port: 0` picks a free port on each start; Moon registers the URL with TrueForge itself |
-| `mcp.serverName` | Name the MCP server is registered under in TrueForge (and used by the agent definition) |
+| `mcp.serverName` | Name the MCP server is registered under in TrueForge. Moon registers two: this name (inline edit, works on the real project) and this name + `-agent` (agent mode, works in the run's hidden copy) |
 | `agent.definitionFile` | Agent definition for agent mode, relative to this repository |
 | `agent.inlineDefinitionFile` | Agent definition for inline edit (Ctrl+I), relative to this repository |
 | `inline.contextLines` | Lines of the file sent with an inline edit, before and after the selection (the agent can read more with its tools) |
 | `inline.maxProblems` | Most editor problems (errors, warnings) sent with an inline edit |
+| `agentRun.maxCopyFiles`, `agentRun.maxCopyBytes` | Agent mode works in a hidden copy of the project (in the system temp folder); bigger projects are refused |
+| `agentRun.commandTimeoutMs` | A command the agent runs is stopped after this long |
+| `agentRun.commandOutputMaxChars` | Only the end of a command's output, up to this many characters, goes to the agent |
+| `agentRun.killGraceMs` | On Stop or timeout (macOS/Linux): time between asking a command to end and force-killing it |
+| `agentRun.commandEnv` | Extra environment variables for commands run in the copy. Placeholders: `{copy}`, `{project}`, `{pathSep}`, `{env:NAME}`. The example points Python at the copy's code and puts the project's `.venv` on `PATH` |
+| `agentRun.reviewContextLines` | Unchanged lines shown around each change in the review screen |
+| `agentRun.reviewOutputChars` | Characters of each command's output shown with the checks in the review screen |
 | `resilience.*` | Watchdog and circuit-breaker timers for the automatic fallback *(Phase 5)* |
 | `context.*` | Project-map size budget *(Phase 4)* |
 | `tools.searchMaxResults`, `tools.listFilesMaxResults` | Most matches / files one tool call returns |
@@ -193,7 +200,7 @@ The agent definitions live in [`agents/`](agents/):
 | `agents/moon-scout.md` | The scout subagent: looks only, reports files and reasons |
 | `agents/prompts/*.md` | The instructions and shared safety rules |
 
-Moon sends these to TrueForge itself when it creates a session, with the model taken from `config/moon.json`. You don't need to import them by hand. The JSON files are TrueForge agent specs with three placeholders that Moon fills in: `{{model}}` (from `models.main`, or `models.backup` on fallback), `{{mcpServer}}` (from `mcp.serverName`) and `{{file:...}}` (the text of a prompt file). Moon also registers its MCP server (`moon-editor`) in TrueForge automatically before each new chat.
+Moon sends these to TrueForge itself when it creates a session, with the model taken from `config/moon.json`. You don't need to import them by hand. The JSON files are TrueForge agent specs with three placeholders that Moon fills in: `{{model}}` (from `models.main`, or `models.backup` on fallback), `{{mcpServer}}` (from `mcp.serverName`) and `{{file:...}}` (the text of a prompt file). Moon also registers its MCP servers (`moon-editor` and `moon-editor-agent`) in TrueForge automatically before each new chat.
 
 ### 6. Build and run the extension
 

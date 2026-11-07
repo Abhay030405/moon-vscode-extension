@@ -75,7 +75,8 @@ Last updated: 5 November 2026
 - **Moon works on any project in any language**; nothing in Moon's code is specific to one language or to Flask (updated 6 Nov).
 - Every command runs **with the copy as its working folder**. Project-specific needs are **settings, not code**: Moon's config can add environment variables for commands run in the copy (for example `PYTHONPATH=src`, or a `PATH` entry for a local tool), with `{copy}` standing for the copy's folder.
 - Known case to cover with such a setting: Python projects installed in "editable" mode (like our Flask test setup) may import from the **original** folder instead of the copy, so tests would check the wrong code. Two safeguards: (1) the setting above points imports at the copy; (2) after running tests, Moon checks the run actually used the copy (for example a file path in the test output) and warns if not. **Test this early, on Flask.**
-- The copy is **deleted** after review finishes or after cancel.
+- The copy is **deleted** on Stop, on Discard, on New chat and when VS Code closes. It is kept after an apply, so the agent can continue in the same chat (built 6 Nov: the review always compares the copy with the real files as they are now, so applied changes do not show again).
+- **Secret files (`.env`, keys) are left out of the copy** (built 6 Nov), so the agent and its commands can't read them. Found on Flask: `tests/test_cli.py::test_load_dotenv` reads `tests/test_apps/.env` and therefore fails only in the copy. The agent instructions tell it such failures are expected and not to create secret files.
 - Give the agent a small tool: **"list my pending changes"**, so it can re-check what it changed instead of trusting its memory (useful after compaction).
 
 **Rejected options (and why)**
@@ -95,14 +96,18 @@ Last updated: 5 November 2026
   - sends **allow** (or **deny** if everything was rejected)
   - the "apply changes" tool, which runs inside the extension, writes **only the accepted hunks**
   - it tells the agent which hunks were rejected (if everything is rejected, the **deny reason** carries this, since TrueForge shows deny reasons to the agent)
-- If the user rejects some hunks, the test results may no longer be accurate. Show a note ("You rejected N hunks, test results may be out of date") and a **Re-run tests** button.
+- If the user rejects some hunks, the test results may no longer be accurate. Show a note ("You rejected N hunks, test results may be out of date"). *(Built 6 Nov: the note. Not built: a Re-run tests button; the user can ask the agent to re-run them.)*
+- **Built 6 Nov, extra safety:** Apply re-checks every file just before writing; a file the user changed while the review was open is skipped (never overwritten) and the agent is told. Writes go through one VS Code WorkspaceEdit, so per-file Ctrl+Z works too; **"Undo this whole run"** puts every applied file back (skipping files changed since the apply). Files waiting in the review get the green Explorer dot.
+- **Discard** = deny with a reason, and the copy is thrown away.
 
 ### 2.3 Terminal commands
 
 **Decided**
 - The user is asked before commands run.
 - **TrueForge decides when to pause** (the run-command tool is marked "needs approval" in the agent setup). The extension only shows the question and sends the answer back.
-- Three buttons: **Allow once** / **Always allow this command for this run** / **Deny**. ("Always allow" maps to TrueForge's built-in "allow for this session" approval rule.)
+- Three buttons: **Allow once** / **Always allow this command for this run** / **Deny**.
+- **Changed 6 Nov:** "Always allow" is done **in Moon**, not with TrueForge's "allow for this session" rule, because that rule is per tool: it would allow *every* later `run_command`, not just the same command. Moon remembers the exact command text for the run and answers TrueForge's approval itself when it comes again. Each command still goes through TrueForge's approval.
+- Commands that look risky (delete, network, git history, outside paths, secrets) are flagged on the card; the list is in `packages/core/src/shared/constants.ts`.
 - Commands run inside the hidden copy.
 
 ---
@@ -266,7 +271,10 @@ Task C: the organisers break the model (unreachable address or invalid key) and 
 **Tool approval (our review screen and the command buttons)**
 - Each MCP server attached to an agent has a list of **tools that need approval**. The **default is "@write" and "@destructive"**, so we must set this list ourselves: `run_command` and `apply_changes` need approval; tools that only write into the hidden copy must **not** pause.
 - The answer is **allow** or **deny**, and **deny can carry a reason that the agent sees**.
-- **"Always allow this command for this run" is built in:** an "allow for this session" approval rule, with an optional expiry time.
+- **"Always allow this command for this run" is built in:** an "allow for this session" approval rule, with an optional expiry time. *(But it is per tool, not per command, so Moon does not use it; see 2.3.)*
+- **Verified on the real server (v0.184.1, 6 Nov):** when a tool needs approval the stream sends `tool.approval_required` (thread id + tool call ids), then `turn.done` with state `done` and a non-empty `requiredActions` list (not a separate "paused" status). The answer is a **new turn** whose input is `user.tool_approval` items (`allow`, or `deny` with a reason), chained to the paused turn with `previousTurnId`. On deny the tool never runs and the agent sees "User denied tool call: <reason>".
+- With deferred tool loading the model may call MCP tools through TrueForge's `call_tool` wrapper (`{mcp_server, tool_name, input}`); Moon unwraps it for the step list and approvals.
+- **TrueForge does not tell an MCP tool which session called it.** So Moon serves two MCP endpoints (two registered servers): inline edit's tools work on the real project, agent mode's on the current run's hidden copy.
 
 **MCP tools: how TrueForge reaches the extension**
 - TrueForge connects to MCP servers **over HTTP only** (streamable HTTP or SSE), registered by URL in its settings. No "start a local program" option.
