@@ -1,6 +1,7 @@
 // report_context: the agent says which files it chose to work from and why (one line each).
 // Moon's panel shows this as the context card, so the user sees the agent's choices; the
 // reasons come from the agent, not from Moon. Only files that exist can be reported.
+// edit_file refuses until this was called once in the run (see ToolContext.contextReported).
 
 import { existsSync, statSync } from "node:fs";
 import { z } from "zod";
@@ -36,6 +37,7 @@ export const reportContextTool = defineTool({
     if (missing.length > 0) {
       throw new ToolError(`These files do not exist: ${missing.map((f) => f.path).join(", ")}. Report only real files.`);
     }
+    ctx.contextReported = true;
     return `Shown to the user: ${args.files.length} file(s).`;
   },
   describe: (args) => ({ action: "Chose files", target: `${args.files?.length ?? 0} files` }),

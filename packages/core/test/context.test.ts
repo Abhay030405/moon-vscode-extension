@@ -214,6 +214,7 @@ describe("report_context", () => {
     const ctx = new ToolContext(project, config);
     expect(await tool.run(ctx, { files: [{ path: "src/shop/cli.py", reason: "the command lives here" }] } as never)).toMatch(/Shown/);
     await expect(async () => tool.run(ctx, { files: [{ path: "src/ghost.py", reason: "x" }] } as never)).rejects.toThrow(/do not exist/);
+    expect(ctx.contextReported).toBe(true);
 
     const events = new TurnEventMapper().map({
       type: "model.message",
@@ -228,5 +229,16 @@ describe("report_context", () => {
     } as never);
     expect(events.map((e) => e.type)).toEqual(["tool-call", "context-choice"]);
     expect(events[1]).toEqual({ type: "context-choice", files: [{ path: "a.py", reason: "why" }] });
+  });
+
+  it("edit_file waits until the agent reported its files", async () => {
+    const edit = AGENT_TOOLS.find((t) => t.name === "edit_file")!;
+    const ctx = new ToolContext(project, config);
+    ctx.agentRun = {} as never; // only checked for presence before the guard
+    const args = { path: "src/shop/new.py", content: "x = 1\n" } as never;
+    await expect(async () => edit.run(ctx, args)).rejects.toThrow(/report_context first/);
+    ctx.contextReported = true;
+    expect(await edit.run(ctx, args)).toMatch(/Created src\/shop\/new.py/);
+    rmSync(path.join(project, "src/shop/new.py"));
   });
 });
