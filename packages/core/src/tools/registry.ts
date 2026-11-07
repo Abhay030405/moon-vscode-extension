@@ -15,6 +15,7 @@ import { readFileTool } from "./read-file.js";
 import { runCommandTool } from "./run-command.js";
 import { searchTextTool } from "./search-text.js";
 import { stepText, type MoonTool } from "./tool.js";
+import { reportContextTool } from "./report-context.js";
 
 /** Looking around: never changes anything. */
 const LOOK_TOOLS = [listFilesTool, searchTextTool, findDefinitionTool, findUsagesTool, readFileTool, getErrorsTool];
@@ -25,6 +26,7 @@ export const EDITOR_TOOLS: MoonTool[] = [...LOOK_TOOLS, proposeEditTool] as Moon
 /** The agent endpoint (agent mode): works in the run's hidden copy. */
 export const AGENT_TOOLS: MoonTool[] = [
   ...LOOK_TOOLS,
+  reportContextTool,
   editFileTool,
   listPendingChangesTool,
   runCommandTool,
