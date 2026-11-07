@@ -1,0 +1,67 @@
+{
+  "$comment": "Retrieval set (docs/architecture.md section 5): small requests on Flask 3.1.3 that name no files, with the files a developer would have to touch ('must') and files that are reasonable to look at too ('ok'). Anything else the agent picks counts as an extra. Written by us by reading the Flask source at the pinned commit.",
+  "repo": "flask",
+  "turnTimeoutMs": 240000,
+  "scenarios": [
+    {
+      "id": "task-b-config-command",
+      "request": "Add a flask config CLI command that prints the app config as JSON with secret values masked. It should appear in flask --help, have tests, and be documented.",
+      "must": ["src/flask/cli.py", "tests/test_cli.py", "docs/cli.rst"],
+      "ok": ["CHANGES.rst", "src/flask/config.py", "src/flask/json/__init__.py", "src/flask/json/provider.py", "src/flask/app.py", "src/flask/sansio/app.py"]
+    },
+    {
+      "id": "debug-flag-off",
+      "request": "FLASK_DEBUG=off should count as false, just like 0, false and no. Fix it and add a test.",
+      "must": ["src/flask/helpers.py", "tests/test_helpers.py"],
+      "ok": ["CHANGES.rst", "docs/config.rst", "docs/debugging.rst", "src/flask/cli.py", "src/flask/app.py", "src/flask/sansio/app.py", "tests/test_cli.py"]
+    },
+    {
+      "id": "json-sort-keys-setting",
+      "request": "Allow turning off key sorting in JSON responses through a config setting, with a test and docs.",
+      "must": ["src/flask/json/provider.py", "tests/test_json.py", "docs/config.rst"],
+      "ok": ["CHANGES.rst", "src/flask/app.py", "src/flask/sansio/app.py", "src/flask/json/__init__.py", "docs/api.rst"]
+    },
+    {
+      "id": "blueprint-dot-message",
+      "request": "The error raised when a blueprint name contains a dot should suggest using an underscore instead. Update the message and its test.",
+      "must": ["src/flask/sansio/blueprints.py", "tests/test_blueprints.py"],
+      "ok": ["CHANGES.rst", "src/flask/blueprints.py", "docs/blueprints.rst"]
+    },
+    {
+      "id": "session-samesite-lax",
+      "request": "Make session cookies default to SameSite=Lax instead of not setting it. Update the tests and the docs.",
+      "must": ["src/flask/app.py", "tests/test_basic.py", "docs/config.rst"],
+      "ok": ["CHANGES.rst", "src/flask/sessions.py", "src/flask/sansio/app.py", "docs/web-security.rst", "tests/test_session_interface.py"]
+    },
+    {
+      "id": "config-from-toml",
+      "request": "Add a one-call way to load the app config from a TOML file, like from_file but without passing a loader. Include tests and docs.",
+      "must": ["src/flask/config.py", "tests/test_config.py", "docs/config.rst"],
+      "ok": ["CHANGES.rst", "tests/static/config.toml", "tests/static/config.json", "docs/api.rst"]
+    },
+    {
+      "id": "log-format-setting",
+      "request": "Let users change the format of Flask's default log messages with a config value.",
+      "must": ["src/flask/logging.py", "tests/test_logging.py", "docs/logging.rst"],
+      "ok": ["CHANGES.rst", "docs/config.rst", "src/flask/app.py", "src/flask/sansio/app.py"]
+    },
+    {
+      "id": "test-client-follow-redirects",
+      "request": "Add an option so the test client follows redirects by default, instead of passing follow_redirects=True on every request.",
+      "must": ["src/flask/testing.py", "tests/test_testing.py"],
+      "ok": ["CHANGES.rst", "docs/testing.rst", "src/flask/app.py", "src/flask/sansio/app.py"]
+    },
+    {
+      "id": "error-handler-type-message",
+      "request": "Registering an error handler for something that is not an exception class should raise a clearer error that names what was passed.",
+      "must": ["src/flask/sansio/scaffold.py", "tests/test_user_error_handler.py"],
+      "ok": ["CHANGES.rst", "src/flask/app.py", "src/flask/sansio/app.py", "src/flask/blueprints.py", "src/flask/sansio/blueprints.py", "docs/errorhandling.rst", "tests/test_basic.py"]
+    },
+    {
+      "id": "url-for-external-hint",
+      "request": "When url_for is called outside a request without SERVER_NAME set, the error should explain how to fix it. Add a test.",
+      "must": ["src/flask/app.py"],
+      "ok": ["CHANGES.rst", "src/flask/helpers.py", "src/flask/sansio/app.py", "tests/test_appctx.py", "tests/test_helpers.py", "tests/test_basic.py", "docs/config.rst", "docs/appcontext.rst"]
+    }
+  ]
+}

@@ -2,7 +2,15 @@
   "name": "@moon/evals",
   "version": "0.0.0",
   "private": true,
-  "description": "Evaluation harness, run against the real TrueForge. Set up in later phases.",
+  "description": "Evaluation harness, run from the command line against the real TrueForge (no VS Code).",
   "license": "Apache-2.0",
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "retrieval": "esbuild retrieval.ts --bundle --platform=node --format=cjs --outfile=dist/retrieval.cjs --log-level=warning && node dist/retrieval.cjs"
+  },
+  "dependencies": {
+    "@moon/core": "workspace:*"
+  }
 }

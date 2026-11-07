@@ -277,10 +277,15 @@ The script clones each repo into `test-repos/` (git-ignored), checks out the pin
 | `pnpm build` | Build all packages (the extension is bundled with esbuild into `packages/extension/dist/`) |
 | `pnpm test` | Unit tests for `packages/core` with Vitest (no model, no VS Code) |
 | `pnpm typecheck` | TypeScript checks for every package |
-| `pnpm eval` | Run the evaluation scenarios against real TrueForge and a real model *(planned)* |
+| `pnpm eval:retrieval` | Retrieval eval: 10 Flask requests that name no files; checks the agent's chosen files against the right ones (needs TrueForge running and `test-repos/flask` cloned). Add `--map-only` to score only the project map (no model, no cost), `--only <id>` for one request |
+| `pnpm eval` | Run all evaluation scenarios against real TrueForge and a real model *(planned)* |
 | `pnpm package` | Build the `.vsix` *(planned)* |
 
 Eval results are written to `packages/evals/results/` (git-ignored) as JSON plus a short report.
+Evals work on a fresh copy of the test repo at its pinned commit (made with `git archive`), so your
+checkout in `test-repos/` is never changed. The retrieval eval stops each run as soon as the agent
+reports its files, before any edit; the requests and their right files are in
+`packages/evals/scenarios/retrieval.json`.
 
 ### Project layout
 
