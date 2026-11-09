@@ -54,9 +54,12 @@ function fillPlaceholders(value: unknown, values: DefinitionValues, baseDir: str
   return value;
 }
 
-/** Creates a TrueForge session that runs `spec` inline. Returns the session id. */
-export async function createSession(client: TrueForgeClient, spec: AgentSpec, title?: string): Promise<string> {
-  const response = await client.sdk.sessions.create({ agent: { spec }, ...(title ? { metadata: { title } } : {}) });
+/**
+ * Creates a TrueForge session that runs `spec` inline, with Moon's labels (session metadata:
+ * project, conversation, kind, model, title; see history/labels.ts). Returns the session id.
+ */
+export async function createSession(client: TrueForgeClient, spec: AgentSpec, labels?: Record<string, string>): Promise<string> {
+  const response = await client.sdk.sessions.create({ agent: { spec }, ...(labels ? { metadata: labels } : {}) });
   return response.data.id;
 }
 
