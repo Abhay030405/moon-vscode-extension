@@ -8,6 +8,11 @@ import type {
   ExtensionToPanel,
   MoonEvent,
   PanelSettings,
+  QuestionView,
+  RecallView,
+  PlanView,
+  TranscriptItemView,
+  ToolApprovalView,
   ReviewView,
   TypingSettings,
 } from "../protocol/messages";
@@ -32,7 +37,9 @@ export type TurnPart =
   | { kind: "text"; text: string }
   | { kind: "log"; lines: LogLine[] }
   /** The context card: what Moon gave the agent (summary) and the files it chose (files). */
-  | { kind: "context"; summary?: ContextSummary; files?: ChosenFile[] };
+  | { kind: "context"; summary?: ContextSummary; files?: ChosenFile[] }
+  /** Moon changed models (fallback after a failure, or back to the main model). */
+  | { kind: "switch"; direction: "fallback" | "back"; from: string; to: string; reason?: string };
 
 /** "waiting": TrueForge paused the turn until the user answers an approval (command or review). */
 export type TurnStatus = "running" | "waiting" | "done" | "cancelled" | "error";
@@ -44,7 +51,7 @@ export type ApplyNotice =
 
 export type Entry =
   | { kind: "user"; text: string }
-  | { kind: "agent"; parts: TurnPart[]; status: TurnStatus; error?: string };
+  | { kind: "agent"; parts: TurnPart[]; status: TurnStatus; error?: string; /** From a continued conversation: shown at once, never typed out. */ restored?: boolean };
 
 export interface ChatState {
   chatId: string;
@@ -58,20 +65,34 @@ export interface ChatState {
   typing?: TypingSettings;
   /** A command waiting for the user's approval. */
   approval?: CommandApprovalView;
+  /** A tool with no card of its own waiting for approval (e.g. a GitHub write). */
+  toolApproval?: ToolApprovalView;
+  /** The agent asks to read an earlier conversation. */
+  recall?: RecallView;
+  /** The agent's plan waiting for approval (propose_plan). */
+  plan?: PlanView;
+  /** Moon's id of this conversation (known once its first session exists, or when continued). */
+  conversationId?: string;
+  /** Title of a conversation continued from the history (its first message). */
+  title?: string;
+  /** The agent's question waiting for the user's answer. */
+  question?: QuestionView;
   /** The review screen (the agent called apply_changes). */
   review?: ReviewView;
   applyNotice?: ApplyNotice;
 }
 
 /** Extension messages that belong to one chat. */
-type ChatMessage = Extract<ExtensionToPanel, { chatId: string }>;
+export type ChatMessage = Extract<ExtensionToPanel, { chatId: string }>;
 
 export type ChatAction =
   | { type: "sent"; text: string }
   | { type: "new-chat"; chatId: string }
   | { type: "settings"; settings: PanelSettings }
   | { type: "message"; message: ChatMessage }
-  | { type: "undo-sent" };
+  | { type: "undo-sent" }
+  /** The user answered a card (question, plan): shown as a line in the current turn. */
+  | { type: "answered"; text: string };
 
 export const newChatId = (): string => crypto.randomUUID();
 
@@ -109,6 +130,13 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "undo-sent":
       // The button goes away at once so it is not pressed twice.
       return state.applyNotice?.kind === "applied" ? { ...state, applyNotice: { ...state.applyNotice, undoable: false } } : state;
+    case "answered": {
+      const last = state.entries.at(-1);
+      if (last?.kind !== "agent") return state;
+      const parts = [...last.parts];
+      appendLog(parts, { id: `answer-${parts.length}-${action.text}`, kind: "note", action: action.text, target: "", done: true });
+      return { ...state, entries: [...state.entries.slice(0, -1), { ...last, parts }] };
+    }
   }
 }
 
@@ -120,6 +148,18 @@ function applyMessage(state: ChatState, message: ChatMessage): ChatState {
       return updateContextCard(state, { summary: message.summary });
     case "command-approval":
       return { ...state, approval: message.approval };
+    case "question":
+      return { ...state, question: message.question };
+    case "tool-approval":
+      return { ...state, toolApproval: message.approval };
+    case "recall-approval":
+      return { ...state, recall: message.recall };
+    case "plan-approval":
+      return { ...state, plan: message.plan };
+    case "conversation":
+      return { ...state, conversationId: message.conversationId };
+    case "resumed":
+      return { ...state, conversationId: message.conversationId, title: message.title, entries: entriesFromTranscript(message.items) };
     case "review":
       return { ...state, review: message.review };
     case "applied":
@@ -132,6 +172,7 @@ function applyMessage(state: ChatState, message: ChatMessage): ChatState {
 function applyEvent(state: ChatState, event: MoonEvent): ChatState {
   if (event.type === "session") return { ...state, sessionUrl: event.url, model: event.model };
   if (event.type === "context-choice") return updateContextCard(state, { files: event.files });
+  if (event.type === "model-switch") return applySwitch(state, event);
   const last = state.entries.at(-1);
   if (last?.kind !== "agent") return state;
   const turn = { ...last, parts: [...last.parts] };
@@ -179,6 +220,24 @@ function applyEvent(state: ChatState, event: MoonEvent): ChatState {
   return { ...state, entries: [...state.entries.slice(0, -1), turn] };
 }
 
+/**
+ * A model switch. Fallback: the failed attempt's answer, steps and chosen files are dropped (the
+ * same request starts fresh on the other model; never joined to a half answer); what Moon gave
+ * the agent (the map summary) stays. Any open approval or review belonged to that attempt.
+ */
+function applySwitch(state: ChatState, event: Extract<MoonEvent, { type: "model-switch" }>): ChatState {
+  const last = state.entries.at(-1);
+  if (last?.kind !== "agent") return state;
+  const { direction, from, to, reason } = event;
+  const kept =
+    direction === "fallback"
+      ? last.parts.flatMap((p): TurnPart[] => (p.kind === "context" ? [{ kind: "context", summary: p.summary }] : p.kind === "switch" ? [p] : []))
+      : last.parts;
+  const parts: TurnPart[] = [...kept, { kind: "switch", direction, from, to, reason }];
+  const turn: Entry = { ...last, parts, status: "running" };
+  return { ...state, model: to, approval: undefined, toolApproval: undefined, recall: undefined, plan: undefined, question: undefined, review: undefined, entries: [...state.entries.slice(0, -1), turn] };
+}
+
 /** Fills the current turn's context card (created at the start of the turn if missing). */
 function updateContextCard(state: ChatState, update: { summary?: ContextSummary; files?: ChosenFile[] }): ChatState {
   const last = state.entries.at(-1);
@@ -188,6 +247,25 @@ function updateContextCard(state: ChatState, update: { summary?: ContextSummary;
   if (index === -1) parts.unshift({ kind: "context", ...update });
   else parts[index] = { ...parts[index]!, ...update } as TurnPart;
   return { ...state, entries: [...state.entries.slice(0, -1), { ...last, parts }] };
+}
+
+/** A past conversation's messages as chat entries (finished turns, read-only steps). */
+export function entriesFromTranscript(items: readonly TranscriptItemView[]): Entry[] {
+  const entries: Entry[] = [];
+  items.forEach((item, i) => {
+    if (item.role === "user") {
+      entries.push({ kind: "user", text: item.text });
+      return;
+    }
+    let last = entries.at(-1);
+    if (last?.kind !== "agent") {
+      last = { kind: "agent", parts: [], status: "done", restored: true };
+      entries.push(last);
+    }
+    if (item.role === "agent") appendText(last.parts, item.text);
+    else if ("action" in item) appendLog(last.parts, { id: `past-${i}`, kind: "tool", action: item.action, target: item.target, done: true });
+  });
+  return entries;
 }
 
 function appendText(parts: TurnPart[], text: string): void {

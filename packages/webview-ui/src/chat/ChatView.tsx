@@ -1,9 +1,10 @@
 // The conversation: user messages, and for each agent turn its steps and answer.
 // With no messages yet it shows a short welcome with a few starter questions.
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { MoonMark } from "../brand/MoonMark";
 import { ContextCard } from "../context-card/ContextCard";
+import { ModelSwitchNotice } from "../notices/ModelSwitchNotice";
 import { LiveLog } from "../live-log/LiveLog";
 import { TurnNotice } from "../notices/TurnNotice";
 import type { TypingSettings } from "../protocol/messages";
@@ -23,17 +24,41 @@ interface Props {
   canSend: boolean;
   onSend(text: string): void;
   onOpenFile(path: string): void;
+  /** Sends the last question again (shown on a failed last turn). */
+  onRetry?(): void;
   /** Shown after the conversation: the command approval card, the apply notice. */
   footer?: ReactNode;
 }
 
-export function ChatView({ entries, typing, projectName, canSend, onSend, onOpenFile, footer }: Props) {
-  // Keep the newest text in view by scrolling only the message list (never the whole page).
+export function ChatView({ entries, typing, projectName, canSend, onSend, onOpenFile, onRetry, footer }: Props) {
+  // Keep the newest text in view by scrolling only the message list (never the whole page),
+  // but only while the user is at the bottom: once they scroll up to read, the list stays put
+  // (a "Jump to latest" button brings them back). Sending a new message follows again.
   const list = useRef<HTMLDivElement>(null);
+  const following = useRef(true);
+  const [showJump, setShowJump] = useState(false);
   const scrollToEnd = () => {
     const el = list.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el && following.current) el.scrollTop = el.scrollHeight;
   };
+  const onScroll = () => {
+    const el = list.current;
+    if (!el) return;
+    const slack = parseFloat(getComputedStyle(el).getPropertyValue("--moon-follow-slack")) || 0;
+    following.current = el.scrollHeight - el.scrollTop - el.clientHeight <= slack;
+    setShowJump(!following.current);
+  };
+  const jumpToLatest = () => {
+    following.current = true;
+    setShowJump(false);
+    scrollToEnd();
+  };
+  // A new user message: follow the answer to it.
+  const userCount = entries.filter((e) => e.kind === "user").length;
+  useEffect(() => {
+    following.current = true;
+    setShowJump(false);
+  }, [userCount]);
   useEffect(scrollToEnd, [entries]);
 
   if (entries.length === 0) {
@@ -58,7 +83,7 @@ export function ChatView({ entries, typing, projectName, canSend, onSend, onOpen
   }
 
   return (
-    <div className="moon-messages" aria-live="polite" ref={list}>
+    <div className="moon-messages" aria-live="polite" ref={list} onScroll={onScroll}>
       {entries.map((entry, i) =>
         entry.kind === "user" ? (
           <div key={i} className="moon-message-user">
@@ -75,12 +100,14 @@ export function ChatView({ entries, typing, projectName, canSend, onSend, onOpen
                   working={entry.status === "running"}
                   onOpenFile={onOpenFile}
                 />
+              ) : part.kind === "switch" ? (
+                <ModelSwitchNotice key={j} {...part} />
               ) : part.kind === "text" ? (
                 <AnswerText
                   key={j}
                   text={part.text}
                   // Typing effect only while the answer arrives; a stopped or failed turn shows everything at once.
-                  typing={entry.status === "running" || entry.status === "waiting" || entry.status === "done" ? typing : undefined}
+                  typing={!entry.restored && (entry.status === "running" || entry.status === "waiting" || entry.status === "done") ? typing : undefined}
                   onGrow={scrollToEnd}
                 />
               ) : (
@@ -101,11 +128,16 @@ export function ChatView({ entries, typing, projectName, canSend, onSend, onOpen
               </div>
             )}
             {entry.status === "waiting" && <div className="moon-working">Waiting for your answer…</div>}
-            <TurnNotice status={entry.status} error={entry.error} />
+            <TurnNotice status={entry.status} error={entry.error} onRetry={i === entries.length - 1 && canSend ? onRetry : undefined} />
           </div>
         ),
       )}
       {footer}
+      {showJump && (
+        <button className="moon-jump-latest" onClick={jumpToLatest}>
+          ↓ Jump to latest
+        </button>
+      )}
     </div>
   );
 }
