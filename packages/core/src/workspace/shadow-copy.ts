@@ -7,12 +7,16 @@
 // - Skips ignored folders (.git, .venv, node_modules, ...), symlinks and secret files.
 // - Remembers a hash of every file it copied, so it can tell what the agent changed and
 //   whether the user edited a real file by hand after the copy was made.
+// - Made and deleted with async file I/O (and short slices for the walk), so it never holds
+//   VS Code's extension host, even for a project with thousands of files.
 
 import { createHash, randomBytes } from "node:crypto";
-import { copyFileSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { readdirSync } from "node:fs";
+import { copyFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
-import { RUN_DIR_REMOVE_RETRIES, RUN_DIR_REMOVE_RETRY_MS, RUNS_TEMP_DIR } from "../shared/constants.js";
+import { COPY_CONCURRENCY, RUN_DIR_REMOVE_RETRIES, RUN_DIR_REMOVE_RETRY_MS, RUNS_TEMP_DIR } from "../shared/constants.js";
+import { forEachLimited, TimeSlicer } from "../shared/time-slice.js";
 
 export interface ShadowCopyOptions {
   /** The real project folder. */
@@ -76,18 +80,20 @@ export class ShadowCopy {
     readonly isSecret: (rel: string) => boolean,
   ) {}
 
-  static create(options: ShadowCopyOptions): ShadowCopy {
+  static async create(options: ShadowCopyOptions): Promise<ShadowCopy> {
     const ignored = new Set(options.ignoredDirs);
+    const slicer = new TimeSlicer();
     const files: string[] = [];
     let bytes = 0;
     for (const rel of walkProjectFiles(options.projectRoot, ignored)) {
+      await slicer.pause();
       if (options.isSecret(rel)) continue;
       files.push(rel);
       if (files.length > options.maxFiles) {
         throw new ShadowCopyError(`The project has more than ${options.maxFiles} files (agentRun.maxCopyFiles), too many to copy.`);
       }
       try {
-        bytes += statSync(path.join(options.projectRoot, rel)).size;
+        bytes += (await stat(path.join(options.projectRoot, rel))).size;
       } catch {
         // vanished while walking: copied below or skipped
       }
@@ -100,26 +106,30 @@ export class ShadowCopy {
     const dir = path.join(runDir, path.basename(options.projectRoot));
     const baseline = new Map<string, string>();
     try {
-      mkdirSync(dir, { recursive: true });
-      for (const rel of files) {
+      await mkdir(dir, { recursive: true });
+      // One mkdir per folder; files copied at the same time wait for the same promise.
+      const folders = new Map<string, Promise<unknown>>();
+      await forEachLimited(files, COPY_CONCURRENCY, async (rel) => {
         const from = path.join(options.projectRoot, rel);
         const to = path.join(dir, rel);
-        mkdirSync(path.dirname(to), { recursive: true });
+        const folder = path.dirname(to);
+        if (!folders.has(folder)) folders.set(folder, mkdir(folder, { recursive: true }));
+        await folders.get(folder);
         const open = options.openText?.(from);
         try {
           if (open !== undefined) {
-            writeFileSync(to, open);
+            await writeFile(to, open);
             baseline.set(rel, hashBytes(open));
           } else {
-            copyFileSync(from, to);
-            baseline.set(rel, hashBytes(readFileSync(to)));
+            await copyFile(from, to);
+            baseline.set(rel, hashBytes(await readFile(to)));
           }
         } catch {
           // unreadable file (locked, vanished): leave it out of the copy
         }
-      }
+      });
     } catch (err) {
-      rmSync(runDir, { recursive: true, force: true });
+      await rm(runDir, { recursive: true, force: true });
       throw new ShadowCopyError(`Could not make the hidden copy: ${(err as Error).message}`);
     }
     return new ShadowCopy(dir, options.projectRoot, baseline, runDir, ignored, options.isSecret);
@@ -135,11 +145,13 @@ export class ShadowCopy {
     return path.join(this.projectRoot, rel);
   }
 
-  /** Deletes the copy. Safe to call twice. */
-  /** Deletes the copy. Retries while a just-killed command still holds files (Windows). */
-  dispose(): void {
+  /**
+   * Deletes the copy (async: Stop never waits on the disk). Retries while a just-killed command
+   * still holds files (Windows). Safe to call twice.
+   */
+  async dispose(): Promise<void> {
     try {
-      rmSync(this.runDir, { recursive: true, force: true, maxRetries: RUN_DIR_REMOVE_RETRIES, retryDelay: RUN_DIR_REMOVE_RETRY_MS });
+      await rm(this.runDir, { recursive: true, force: true, maxRetries: RUN_DIR_REMOVE_RETRIES, retryDelay: RUN_DIR_REMOVE_RETRY_MS });
     } catch {
       // Left in the temp folder; the OS cleans it up. Never fail Stop over it.
     }

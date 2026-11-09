@@ -15,18 +15,20 @@ export interface AgentRunOptions {
   editor?: EditorBridge;
   /** Called when the user approved apply_changes; returns the report for the agent. */
   applyApproved(run: AgentRun, summary: string): Promise<string>;
+  /** Called after each command finishes (the work record keeps a short note of it). */
+  onCommand?(result: RunResult): void;
 }
 
 export class AgentRun {
-  readonly copy: ShadowCopy;
   readonly tools: ToolContext;
   /** Every command the agent ran, in order (test results for the review screen). */
   readonly commands: RunResult[] = [];
   private readonly abort = new AbortController();
 
-  constructor(options: AgentRunOptions) {
+  /** Makes the hidden copy (async, so the editor never waits on it) and the run around it. */
+  static async create(options: AgentRunOptions): Promise<AgentRun> {
     const secrets = new SecretGuard(options.config.safety);
-    this.copy = ShadowCopy.create({
+    const copy = await ShadowCopy.create({
       projectRoot: options.projectRoot,
       ignoredDirs: options.config.tools.ignoredDirs,
       isSecret: (rel) => secrets.isSecret(rel),
@@ -34,12 +36,22 @@ export class AgentRun {
       maxFiles: options.config.agentRun.maxCopyFiles,
       maxBytes: options.config.agentRun.maxCopyBytes,
     });
+    return new AgentRun(copy, options);
+  }
+
+  private constructor(
+    readonly copy: ShadowCopy,
+    options: AgentRunOptions,
+  ) {
     this.tools = new ToolContext(this.copy.dir, options.config);
     this.tools.editor = options.editor;
     this.tools.agentRun = {
       copy: this.copy,
       signal: this.abort.signal,
-      onCommand: (result) => this.commands.push(result),
+      onCommand: (result) => {
+        this.commands.push(result);
+        options.onCommand?.(result);
+      },
       applyApproved: (summary) => options.applyApproved(this, summary),
     };
   }
@@ -58,10 +70,10 @@ export class AgentRun {
     return buildReview(this.copy, readProjectText);
   }
 
-  /** Deletes the hidden copy. */
-  dispose(): void {
+  /** Stop (kills a running command), then deletes the hidden copy in the background. */
+  dispose(): Promise<void> {
     this.abort.abort();
-    this.copy.dispose();
+    return this.copy.dispose();
   }
 }
 
