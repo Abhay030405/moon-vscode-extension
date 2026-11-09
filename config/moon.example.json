@@ -50,7 +50,9 @@
   },
   "resilience": {
     "watchdogMs": 12000,
+    "stallMs": 45000,
     "rateLimitRetries": 2,
+    "rateLimitWaitMs": 4000,
     "circuitBreaker": {
       "firstProbeMs": 30000,
       "backoffFactor": 2,
@@ -118,6 +120,22 @@
   },
   "ui": {
     "typingCharsPerSecond": 120,
-    "typingMaxLagMs": 1500
+    "typingMaxLagMs": 1500,
+    "approvalArgsMaxChars": 4000
+  },
+  "memory": {
+    "workLogMaxTokens": 2500,
+    "readPastMaxTokens": 4000,
+    "staleCheckMaxFiles": 200,
+    "commandTailChars": 400,
+    "historyPageSize": 50,
+    "maxKeptCopies": 3
+  },
+  "extras": {
+    "webSearch": false,
+    "github": {
+      "enabled": false,
+      "serverName": "github"
+    }
   }
 }

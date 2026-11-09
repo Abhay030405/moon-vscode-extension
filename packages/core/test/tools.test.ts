@@ -233,6 +233,44 @@ describe("MCP server", () => {
     }
   });
 
+  it("a cancel notice sent as a new request aborts the running tool call (TrueForge's own cancel)", async () => {
+    let started!: () => void;
+    const isRunning = new Promise<void>((resolve) => (started = resolve));
+    let aborted = false;
+    const waitTool: MoonTool = {
+      name: "wait_for_stop",
+      title: "Wait",
+      description: "Waits until cancelled.",
+      input: {},
+      readOnly: true,
+      run: (_ctx, _args, signal) =>
+        new Promise<string>((resolve) => {
+          started();
+          signal?.addEventListener("abort", () => {
+            aborted = true;
+            resolve("stopped");
+          });
+        }),
+      describe: () => ({ action: "Wait", target: "" }),
+    };
+    const server = await startMcpServer({ ...config.mcp, port: 0 }, [{ name: "t", path: config.mcp.path, tools: [waitTool], context: () => ctx }]);
+    const client = new Client({ name: "moon-test", version: "0.0.0" });
+    try {
+      await client.connect(new StreamableHTTPClientTransport(new URL(server.urls.t!)));
+      const stop = new AbortController();
+      const call = client.callTool({ name: "wait_for_stop", arguments: {} }, undefined, { signal: stop.signal }).catch(() => "cancelled");
+      await isRunning;
+      expect(server.runningCalls).toBe(1);
+      stop.abort("client-cancelled"); // the client sends notifications/cancelled in a new POST
+      await call;
+      await expect.poll(() => aborted).toBe(true);
+      await expect.poll(() => server.runningCalls).toBe(0);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it("only answers on the configured paths", async () => {
     const server = await startMcpServer({ ...config.mcp, port: 0 }, endpoints());
     try {

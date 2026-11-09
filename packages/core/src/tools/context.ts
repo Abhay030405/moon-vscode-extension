@@ -57,6 +57,22 @@ export interface InlineTarget {
   onProposal(proposedText: string): void;
 }
 
+/**
+ * The conversation's memory, set by agent mode on the run's context: the work record
+ * (work_log), the agent's summary (save_summary) and earlier conversations of this project
+ * (list_past_sessions / read_past_session).
+ */
+export interface MemoryHooks {
+  /** This conversation's work record as text. */
+  workLog(): string;
+  /** The agent's two-line summary of the finished task, for the history list. */
+  saveSummary(summary: string): Promise<void>;
+  /** This project's earlier conversations whose title or summary matches the query. */
+  listPast(query: string | undefined, limit: number): Promise<string>;
+  /** One earlier conversation: its summary, its work record, or its transcript. */
+  readPast(id: string, part: "summary" | "work" | "transcript"): Promise<string>;
+}
+
 export class ToolContext {
   readonly paths: PathGuard;
   readonly secrets: SecretGuard;
@@ -68,12 +84,16 @@ export class ToolContext {
   inlineTarget: InlineTarget | undefined;
   /** Set only on agent mode's context, for the run it belongs to. */
   agentRun: AgentRunHooks | undefined;
+  /** Set only on agent mode's context: this conversation's memory. */
+  memory: MemoryHooks | undefined;
   readonly runSettings: MoonConfig["agentRun"];
   /**
    * True once the agent called report_context in this run. edit_file waits for it, so the user
    * always sees which files the agent chose (and why) before the first change.
    */
   contextReported = false;
+  /** True while a plan from propose_plan waits for the user: edit_file is refused until it is approved. */
+  planWaiting = false;
 
   constructor(root: string, config: Pick<MoonConfig, "tools" | "safety" | "agentRun">) {
     this.paths = new PathGuard(root);
