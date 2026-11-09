@@ -1,5 +1,5 @@
 {
-  "$comment": "Moon's inline-edit definition (Ctrl+I in the editor), sent to TrueForge as an inline AgentSpec for each inline edit. Same placeholders as moon-agent.json. Small toolbox: a few read-only lookups, the editor's problems, and propose_edit, which only hands the change back for review (it never writes), so it does not pause for approval.",
+  "$comment": "Moon's inline-edit definition (Ctrl+I in the editor), sent to TrueForge as an inline AgentSpec for each inline edit. Same placeholders as moon-agent.json. Small toolbox: a few read-only lookups, the editor's problems, and propose_edit, which only hands the change back for review (it never writes), so it does not pause for approval. TrueForge's ask_user_question tool is off here: the inline box has no question card, so the agent says what is unclear in its reply.",
   "model": { "name": "{{model}}" },
   "instructions": "{{file:prompts/inline-instructions.md}}\n\n{{file:prompts/safety-rules.md}}",
   "mcpServers": [
@@ -11,6 +11,9 @@
     }
   ],
   "config": {
-    "iterationLimit": 8
+    "iterationLimit": 8,
+    "askUserQuestions": {
+      "enabled": false
+    }
   }
 }

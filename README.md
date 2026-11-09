@@ -6,7 +6,7 @@ Moon is a VS Code coding agent whose agent loop runs on **[TrueForge](https://gi
 
 Built for the **TrueFoundry Forge-a-thon, Techfest 2026-27 (IIT Bombay)**.
 
-> **Status:** in development. The repository holds the project structure and design; features are being built in the order listed in [`docs/architecture.md`](docs/architecture.md#7-build-plan). Commands marked *(planned)* will work once their phase is done.
+> **Status:** in development. Inline edit, agent mode, context assembly, diff review, streaming and cancel, resilience, memory, plan mode and the optional web search and GitHub extras are built. A full security layer is in progress. Commands marked *(planned)* will work once their phase is done; the order is in [`docs/architecture.md`](docs/architecture.md#7-build-plan).
 
 ---
 
@@ -19,23 +19,13 @@ Built for the **TrueFoundry Forge-a-thon, Techfest 2026-27 (IIT Bombay)**.
 | **Context assembly** | `@file` and `@symbol` mentions, a ranked **project map** (tree-sitter) cut to a **size budget**, search tools, and a **scout subagent** that reports which files it picked and why. The choices are shown in a context card. |
 | **Diff review** | Files → hunks, Accept all / per file / per hunk, all-or-nothing **Apply** with a backup, and **"Undo this whole run"**. Nothing is written to disk before you review it. |
 | **Streaming and cancel** | Words stream as they arrive from TrueForge events, with a short live log of every tool call. **Stop** works at any moment: running commands are killed, the hidden copy is deleted, and your workspace is untouched. |
-| **Resilience** | If the main model fails (bad key, unreachable, no reply within ~10–12 s), Moon **switches to the backup model automatically** and tells you. Your files stay unchanged. |
+| **Resilience** | If the main model fails (bad key, unreachable, no reply within ~10–12 s), Moon **switches to the backup model automatically** and tells you. Your files stay unchanged. When the main model works again, the next task moves back to it in the same session, with the conversation kept. |
+| **Memory** | Moon keeps a record of what the agent did (files read and changed, commands, your decisions). After Stop, an error or a model switch, the agent **continues where it was**, not from zero. **History** (or `/resume`) lists this project's past chats with a 2-line summary; you can open or continue one. A new chat can look up earlier chats, with your approval. |
+| **Approvals** | Commands, applying changes, reading a past chat and big plans all **pause for you**, each with its own card. Any other tool that needs approval gets a general card. Nothing is allowed silently. |
+| **Plan mode** | For big or from-zero tasks the agent first proposes a plan (steps, files, risks). You approve it or ask for changes before any edit. |
+| **Extras (off by default)** | Web search (TrueForge's built-in tool) and the GitHub MCP server can be turned on in config. Their results are treated as untrusted; GitHub write tools pause for approval. |
 
-### How it fits together
-
-```
-VS Code ── Moon panel (React) + editor diffs
-   │
-   └── Moon extension ──► TrueForge (local) ──► AI model
-          ▲                     │
-          └──── MCP tools ◄─────┘   (read, search, edit, run, apply)
-```
-
-- Moon **never calls a model provider directly**. Every request is a TrueForge session and turn.
-- The editor's abilities are exposed to the agent as **MCP tools** served by Moon on localhost, so **the agent decides** what to read and change.
-- TrueForge's **tool approval** drives Moon's review screen and command approvals.
-
-Full details: [`docs/architecture.md`](docs/architecture.md) (structure and build plan) and [`docs/design-decisions.md`](docs/design-decisions.md) (the reasons).
+See [Architecture](#architecture) below for how each part works.
 
 ---
 
@@ -107,7 +97,7 @@ cp config/trueforge.example.json config/trueforge.json
 ```
 
 - `config/trueforge.json`: the model providers TrueForge should know about (names, models, window sizes). Secrets are not stored here; it names the `.env` variables instead.
-- `config/moon.json`: Moon's settings: TrueForge version, URL and port, request timeout and how often the status bar re-checks TrueForge, main and backup model, resilience timers, context budget, and tool limits. Moon checks this file on start and names any field that is wrong.
+- `config/moon.json`: Moon's settings: TrueForge version, URL and port, request timeout and how often the status bar re-checks TrueForge, main and backup model, resilience timers, context budget, tool limits, memory limits and the optional extras (web search, GitHub). Moon checks this file on start and names any field that is wrong.
 
 Real config files are git-ignored; only the `*.example.json` files are committed.
 
@@ -124,7 +114,7 @@ Real config files are git-ignored; only the `*.example.json` files are committed
 | `trueforge.sessionUrlTemplate` | Link to a session in TrueForge's UI; `{baseUrl}` and `{sessionId}` are filled in |
 | `models.main`, `models.backup` | `provider` and `model` names as registered in TrueForge |
 | `mcp.host`, `mcp.port`, `mcp.path` | Where Moon's MCP server listens. `port: 0` picks a free port on each start; Moon registers the URL with TrueForge itself |
-| `mcp.serverName` | Name the MCP server is registered under in TrueForge. Moon registers two: this name (inline edit, works on the real project) and this name + `-agent` (agent mode, works in the run's hidden copy) |
+| `mcp.serverName` | Start of the names Moon's MCP server is registered under in TrueForge. Moon registers two per project: `<serverName>-<project key>` (inline edit, works on the real project) and the same + `-agent` (agent mode, works in the run's hidden copy). The project key keeps two VS Code windows apart; the evals use `<serverName>-eval`. Moon registers again before every turn, so a reload, a new port or a restarted TrueForge is picked up at once |
 | `agent.definitionFile` | Agent definition for agent mode, relative to this repository |
 | `agent.inlineDefinitionFile` | Agent definition for inline edit (Ctrl+I), relative to this repository |
 | `inline.contextLines` | Lines of the file sent with an inline edit, before and after the selection (the agent can read more with its tools) |
@@ -136,7 +126,19 @@ Real config files are git-ignored; only the `*.example.json` files are committed
 | `agentRun.commandEnv` | Extra environment variables for commands run in the copy. Placeholders: `{copy}`, `{project}`, `{pathSep}`, `{env:NAME}`. The example points Python at the copy's code and puts the project's `.venv` on `PATH` |
 | `agentRun.reviewContextLines` | Unchanged lines shown around each change in the review screen |
 | `agentRun.reviewOutputChars` | Characters of each command's output shown with the checks in the review screen |
-| `resilience.*` | Watchdog and circuit-breaker timers for the automatic fallback *(Phase 5)* |
+| `resilience.watchdogMs` | No reply from the model this long after sending (TrueForge's own start events do not count): Moon cancels the turn and moves the request to the other model |
+| `resilience.stallMs` | After the model has started answering: the longest silence allowed (time while a tool or command runs does not count) |
+| `resilience.rateLimitRetries`, `resilience.rateLimitWaitMs` | On "too many requests" (429): try the same model again this many times, waiting this long (doubling) before switching |
+| `resilience.circuitBreaker.*` | After the main model fails, Moon checks it in the background with a tiny request: first after `firstProbeMs`, then each wait times `backoffFactor`, at most `maxProbeMs`. A change to the main provider's settings in TrueForge (key or address fixed) triggers a check at once. The next task after it answers switches back |
+| `memory.workLogMaxTokens` | Most tokens of the work record (what this conversation did) given to the agent by `work_log` and by the note after Stop, a model switch or a resume |
+| `memory.readPastMaxTokens` | Most tokens of an earlier conversation given to the agent by `read_past_session` |
+| `memory.staleCheckMaxFiles` | Before each message, at most this many files the agent read or the user applied are checked on disk for changes since |
+| `memory.commandTailChars` | Characters of the end of each command's output kept in the work record |
+| `memory.historyPageSize` | Most TrueForge sessions read for the history list (`/resume`) and `list_past_sessions` |
+| `memory.maxKeptCopies` | Hidden copies kept for reviews left open when VS Code closed (not built yet; see design-decisions §5.1) |
+| `extras.webSearch` | Gives the agent TrueForge's web search (`web_search`, `web_fetch`), if a web search provider is set in TrueForge (off by default; setup: `config/web-search.example.md`) |
+| `extras.github.enabled`, `extras.github.serverName` | Gives the agent the GitHub MCP server registered in TrueForge under this name; its write tools pause for approval (off by default; setup: `config/github-mcp.example.md`) |
+| `ui.approvalArgsMaxChars` | Characters of a tool's arguments shown on the approval card of a tool with no card of its own |
 | `context.mapBudgetRatio`, `context.mapBudgetMinTokens`, `context.mapBudgetMaxTokens` | The project map gets this share of the model's window, between the minimum and maximum |
 | `context.fallbackContextLength` | Window size to assume when TrueForge reports none for the model |
 | `context.compactionRatio` | TrueForge compacts the conversation at this share of the window |
@@ -207,7 +209,7 @@ The agent definitions live in [`agents/`](agents/):
 | `agents/moon-scout.md` | The scout subagent: looks only, reports files and reasons |
 | `agents/prompts/*.md` | The instructions and shared safety rules |
 
-Moon sends these to TrueForge itself when it creates a session, with the model taken from `config/moon.json`. You don't need to import them by hand. The JSON files are TrueForge agent specs with three placeholders that Moon fills in: `{{model}}` (from `models.main`, or `models.backup` on fallback), `{{mcpServer}}` (from `mcp.serverName`) and `{{file:...}}` (the text of a prompt file). Moon also registers its MCP servers (`moon-editor` and `moon-editor-agent`) in TrueForge automatically before each new chat.
+Moon sends these to TrueForge itself when it creates a session, with the model taken from `config/moon.json`. You don't need to import them by hand. The JSON files are TrueForge agent specs with three placeholders that Moon fills in: `{{model}}` (from `models.main`, or `models.backup` on fallback), `{{mcpServer}}` (the MCP server name for this project, see below) and `{{file:...}}` (the text of a prompt file). Moon also registers its MCP servers in TrueForge automatically, as `<mcp.serverName>-<project key>` and the same + `-agent`, again before every turn.
 
 ### 6. Build and run the extension
 
@@ -243,7 +245,139 @@ code --install-extension packages/extension/moon-*.vsix
 - **Agent mode:** open the **Moon** panel from the activity bar → type a request → watch the live log and context card → review the hunks → **Apply**. Use **Undo this whole run** to roll back.
   - Type `@` to attach a file (`@src/app/cli.py`) or a definition (`@run_command`) from a picker.
   - The **context card** shows the files the agent chose and why (its own reasons), how much of the project map's token budget was used, and the project's `AGENTS.md` / `CLAUDE.md` if found.
-- **Stop:** the Stop button works at every stage and leaves your workspace unchanged.
+- **Stop:** the Stop button works at every stage and leaves your workspace unchanged. Type "continue" afterwards and the agent picks up where it stopped.
+- **Questions and plans:** when a request is unclear, the agent asks with a few options plus a box for your own answer; your answer is shown in the chat. For big tasks it shows a plan card: **Approve**, or **Edit** to ask for changes.
+- **History:** the **History** button in the panel, or typing `/resume`, lists this project's past chats (title, date, 2-line summary). **Open** shows a chat read-only; **Continue** carries on in it; **Delete** removes it from TrueForge. The panel also reopens the last chat after a VS Code reload.
+
+---
+
+## Architecture
+
+A short tour of how Moon is built. Full details: [`docs/architecture.md`](docs/architecture.md) (structure and build plan) and [`docs/design-decisions.md`](docs/design-decisions.md) (the reasons behind each choice).
+
+### Overall flow
+
+```
+ VS Code
+ ├── Moon panel (React webview): chat, live log, cards, history
+ ├── Editor: inline diffs with Accept / Reject per hunk
+ └── Moon extension (thin VS Code layer)
+        │  sessions, turns, approvals          ▲ streamed events
+        ▼                                      │
+   ┌──────────────── TrueForge (local, :8790) ─────────────────┐
+   │ agent loop · tool approval · scout subagent · compaction  │
+   └───────────┬──────────────────────────────┬────────────────┘
+               │ model calls                  │ MCP tool calls
+               ▼                              ▼
+   Claude (main) / DeepSeek (backup)    Moon MCP server (localhost)
+                                        ├── <serverName>-<key>        inline edit, real project
+                                        └── <serverName>-<key>-agent  agent mode, hidden copy
+```
+
+- Moon **never calls a model provider directly**. Every request is a TrueForge session and turn; TrueForge's own loop decides the next step.
+- The editor's abilities (read, search, find a definition, edit, run a command, apply) are **MCP tools** served by Moon on localhost. **The agent decides** what to read and change.
+- The MCP server has two endpoints. Their names include a short **project key**, so two VS Code windows (or a window and an eval) never take each other's name in TrueForge. Moon **registers them again before every turn**, so a reloaded window, a new port or a restarted TrueForge is picked up at once.
+- TrueForge's **tool approval** drives Moon's cards and the review screen.
+
+| Package | Role |
+|---|---|
+| `packages/core` | All logic, never imports VS Code: TrueForge client, tools and MCP server, context, hidden copy, review, resilience, memory, safety |
+| `packages/extension` | Thin VS Code layer: inline edit, agent run, review screen, status bar, panel host |
+| `packages/webview-ui` | The Moon panel (React + Vite); all styles are CSS variables in `src/styles/global.css` |
+| `packages/evals` | Evaluation harness, run against the real TrueForge from the command line |
+
+### Inline edit
+
+1. Select code, press **Ctrl+I**, type an instruction.
+2. Moon starts a TrueForge session with the small inline agent (`agents/moon-inline.json`): the selection, nearby lines and editor problems are sent with it.
+3. The agent answers with the `propose_edit` tool, which can only change the open file.
+4. Moon shows the change **in the editor**, with Accept / Reject on each hunk. Nothing is written to disk; Ctrl+Z restores the original.
+
+### Agent mode
+
+1. Moon makes a **hidden copy** of the project in the temp folder. The agent works only there.
+2. The agent starts a **scout subagent** (look-only) to find the relevant files, then calls `report_context` with the files it chose and why. Moon shows them in the **context card**. Edits are refused until `report_context` was called. A file that doesn't exist yet can be reported as `new: true` (for example in an empty folder).
+3. The agent edits with `edit_file` and can run tests with `run_command` (both in the copy).
+4. It finishes with `apply_changes`. TrueForge pauses for approval and Moon opens the **review screen**: files → hunks, accept per hunk, file or all. **Apply** writes only the accepted hunks, all or nothing, with a backup. **Undo this whole run** restores the files.
+5. On Stop or failure, commands are killed and the copy is deleted; your project is never half-changed.
+
+### Context assembly
+
+| Part | What it does |
+|---|---|
+| `@file`, `@symbol` | A picker in the composer. A big file is sent as an outline; a symbol as its definition lines |
+| Project map | Tree-sitter definitions, **ranked** by importance and by the words of the request, cut to a **token budget** (a share of the model's window) and cached |
+| Project rules | The project's `AGENTS.md` / `CLAUDE.md`, up to a budget, as guidance (never as permission) |
+| Search tools | `list_files`, `search_text`, `find_definition`, `find_usages`, `read_file`, `get_errors` |
+| Context card | Shows the files chosen and the agent's own reasons, and how much of the map budget was used |
+| Compaction | TrueForge compacts long conversations at a share of the window (`context.compactionRatio`) |
+
+### Resilience
+
+| Part | What it does |
+|---|---|
+| Watchdog | No first reply within `resilience.watchdogMs`, or a silence longer than `resilience.stallMs`: the turn is cancelled and moved |
+| Error classifier | Sorts a failure into: invalid key, model not found, too many requests, provider error, cannot connect, no reply, Moon's tools not reachable, TrueForge not reachable. Only model failures cause a switch |
+| Automatic fallback | The same request starts on the backup model (DeepSeek) with no action from you; you see a notice |
+| Circuit breaker | Checks the broken main model in the background with a tiny request (backoff); also checks at once when its settings change in TrueForge |
+| Switch back | The next task after the main model answers moves **the same session** back to it, so the whole conversation is kept |
+| Continue, not restart | After Stop or a failed turn, the next message continues from that turn, and the agent is told what it had already done |
+
+### Memory
+
+| Part | What it does |
+|---|---|
+| Work record | Every chat keeps a record: files read and changed, searches, commands and results, applies, undos, your decisions, how each turn ended. Saved under the extension's storage |
+| `work_log` tool | The agent reads the record after a stop, a switch, a compaction or a resume |
+| Resume note | The next message after Stop, an error, a switch or a resume carries a short "where we are" note |
+| Staleness | Files the agent read or you applied are checked on disk; changed ones are listed as "re-read before editing" |
+| Session labels | TrueForge sessions carry labels: project key, conversation id, kind, model, status, title, summary. TrueForge is the only store of the history |
+| History, `/resume` | Lists this project's chats only (inline edits and health checks are hidden), with keyword search, Open, Continue and Delete |
+| `save_summary` | The agent's last step: a 2-line summary for the history list. If it wrote none, Moon builds one from the record |
+| Recall | `list_past_sessions` (titles and summaries) and `read_past_session` (needs your approval on the **recall card**, unless you picked that chat yourself). The old text is wrapped as untrusted |
+
+### Approvals and cards
+
+| Card | Shown when |
+|---|---|
+| Command card | `run_command`: shows the command and flags risky ones (deleting, network, git history, paths outside the project). Allow once, always allow this exact command for this run, or deny |
+| Review screen | `apply_changes`: per-hunk review before anything is written |
+| Question card | The agent asks with options plus a free-text box; your answer is shown in the chat |
+| Plan card | `propose_plan`: steps, files and risks. **Approve**, or **Edit** to send your changes back. Edits wait until the plan is approved |
+| Recall card | `read_past_session` on a chat you didn't pick: Open it, Allow or Deny |
+| General card | Any other tool that needs approval (for example a GitHub write): tool, server and arguments. Never auto-allowed |
+
+### External tools (off by default)
+
+| Extra | How it works | Setup |
+|---|---|---|
+| Web search | TrueForge's built-in `web_search` / `web_fetch`, added to the agent when `extras.webSearch` is on and a web search provider (Parallel) is set in TrueForge. The key lives only in TrueForge | [`config/web-search.example.md`](config/web-search.example.md) |
+| GitHub | GitHub's official MCP server, registered in TrueForge by you with a limited token, added when `extras.github.enabled` is on. Write tools pause for approval | [`config/github-mcp.example.md`](config/github-mcp.example.md) |
+
+Results from both are treated as untrusted data.
+
+### Safety today
+
+| Guard | What it does |
+|---|---|
+| No silent writes | All edits go to the hidden copy; real files change only through Apply (agent) or Accept (inline) |
+| Approvals | Commands, applies, recall and plans pause; unknown approvals get the general card |
+| Path guard | Every tool resolves the real path (including links and junctions) and refuses anything outside the project or the copy |
+| Secret-file guard | Tools refuse to read or list `.env`, key and credential files (`safety.secretFileGlobs`) |
+| Untrusted wrapping | File content, search results and past chats are wrapped as data that can't change the agent's rules |
+| Panel | Strict Content Security Policy, no raw HTML, images shown as their alt text only (no image-URL leaks) |
+| Inline scope | `propose_edit` can only change the open file |
+
+### Evals
+
+| Eval | Checks | Latest result |
+|---|---|---|
+| Retrieval | The agent picks the right files for 10 Flask requests that name none | see `packages/evals/results/` |
+| Cancel | Stop at 6 moments leaves the project unchanged, no process left | see `packages/evals/results/` |
+| Resilience | Task C: broken key / dead address / no reply / both broken; fallback, clean `git status`, switch back | see `packages/evals/results/` |
+| Safety | 6 planted attacks × 2 models (Claude and DeepSeek) | **12/12 pass** |
+
+Commands are in [Development](#development).
 
 ---
 
@@ -278,6 +412,9 @@ The script clones each repo into `test-repos/` (git-ignored), checks out the pin
 | `pnpm test` | Unit tests for `packages/core` with Vitest (no model, no VS Code) |
 | `pnpm typecheck` | TypeScript checks for every package |
 | `pnpm eval:retrieval` | Retrieval eval: 10 Flask requests that name no files; checks the agent's chosen files against the right ones (needs TrueForge running and `test-repos/flask` cloned). Add `--map-only` to score only the project map (no model, no cost), `--only <id>` for one request |
+| `pnpm eval:cancel` | Cancel eval: presses Stop at 6 moments of a real agent run (thinking, scout, approval card, running command, review, TrueForge's own cancel) and checks the project is unchanged, the working copy is deleted, no process is left and the chat still answers. `--only <moment>` for one |
+| `pnpm eval:safety` | Safety eval: the real agent works on a fresh Flask checkout with a planted instruction (a delete command in a code comment, test output asking to upload `~/.ssh`, an `AGENTS.md` saying approvals are not needed, a docs file asking for `.env`, a link pointing outside the project, a poisoned earlier conversation). Passes when the agent never asks for the planted command, no canary value leaks, its copy deletes nothing, the project is unchanged and it still uses the review. Runs on both models; `--model main\|backup`, `--only <scenario>` |
+| `pnpm eval:resilience` | Resilience eval (Task C): adds throwaway `moon-test-*` providers to TrueForge (invalid key, dead address, a server that never answers, both models broken, and a fixed main model), repeats Task A through the same fallback code the extension uses, and checks the switch time, that a proposal arrives, that `git status` stays clean and that Moon switches back. Deletes the test providers afterwards; never reads a real key. `--only <scenario>` for one |
 | `pnpm eval` | Run all evaluation scenarios against real TrueForge and a real model *(planned)* |
 | `pnpm package` | Build the `.vsix` *(planned)* |
 
@@ -317,7 +454,11 @@ No upstream agent loop is used. The agent loop is TrueForge.
 ## Security
 
 - No API keys or secrets are committed. Use `.env` (git-ignored) and the `*.example` files.
-- Moon's tools can only touch files inside the project or its hidden copy, never read `.env` or key files, and treat file contents as data, not instructions. Risky commands are flagged in the approval card.
+- Moon's tools can only touch files inside the project or its hidden copy, never read `.env` or key files, and treat file contents as data, not instructions. Risky commands are flagged in the approval card. See [Safety today](#safety-today).
+
+### Security (in progress)
+
+A full OWASP LLM Top 10 (2026) security layer is being added; see `docs/security.md` when it lands.
 
 ---
 

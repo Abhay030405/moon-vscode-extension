@@ -218,6 +218,74 @@ Last updated: 5 November 2026
 - Save the date or git commit with each note, so Moon can say "this note may be old".
 - Only **general** skills (how to work: find similar code first, add a test, update docs, how to run tests in the copy). **No Flask-specific notes for the demo**, because naming the files in a note can look like "the user named the files" (A2/B1 risk).
 
+### 5.1 Session memory (Phase 6B): work record, history, recall
+
+These are separate from the `/update` notes above. This is the memory of *what was done*, not general skills.
+
+**Research basis**
+- **Durable session log:** Claude Code (JSONL per session), Codex (rollout files), Cline (task folders), OpenCode (SQLite).
+- **Ledger of files read and edited, with staleness checks:** Cline's `files_in_context` with file watchers, and Claude Code's read-before-edit check.
+- **Summaries for long chats:** Continue, OpenCode, Aider.
+- **A resume list:** Claude `/resume`, Codex `resume`, the Cline and Continue history views.
+
+**Store.** **TrueForge's SQLite is Moon's only store.** Sessions are kept with no expiry. Moon adds labels and keeps no database of its own. TrueForge's own "memory" is not used: it needs Zep, an outside service.
+
+**Probed on TrueForge 0.184 (10 Nov):**
+- **Metadata:** session metadata is stored and `sessions.list` filters on it (exact match, all keys). Each value can be at most **128 characters**; 21+ keys are fine. So the 2-line summary is two labels (`moon.summary.1`, `moon.summary.2`).
+- **No title on create:** creating a session has no title field. A `title` in metadata is only a label, and TrueForge takes the title from the first message, so Moon keeps its own `moon.title` label.
+- **Continuing after Stop:** a new turn **can chain onto a cancelled turn**. The model then sees that turn's input and work. So after Stop, Moon continues from the stopped turn instead of throwing it away.
+- **Stopped turns are listed:** `listTurns` includes cancelled turns. Their events keep finished messages and tool results, but streaming deltas are not stored.
+- **Switching model on an old session:** PATCHing an inline session's spec to another model works, and the next turn still has the whole history. Continuing an old chat on another model therefore stays in the same session.
+
+**Decided**
+- **Work record.** It is built live from the turn events and the run's commands: files read, edits, commands, applies and undos, decisions, and how each turn ended. The agent gets it back through the `work_log` tool and a "where we are" note. The note is added after Stop, after a model switch and on resume, and lists files changed on disk since they were read.
+- **History.**
+  - **Labels:** `moon.project`, `moon.conversation`, `moon.kind`, `moon.model`, `moon.status`, `moon.title`, `moon.summary.*`.
+  - **Resume:** `/resume` lists only this project's agent chats, with probe and inline sessions hidden. A chat can be opened read-only, continued or deleted.
+  - **Summary:** written by the agent as its last step (`save_summary`). When the agent wrote none, it is built from the record.
+- **Recall.** `list_past_sessions` needs no approval. `read_past_session` needs approval through the recall card, except for a session the user picked themselves. Past sessions are untrusted text, to guard against memory poisoning.
+
+**As built (10 Nov)**
+- **One change from the plan: the work record is a small file.** TrueForge's stored events carry the tool calls, but not what Moon decided outside the model: command results as the review shows them, the user's applies, rejects and undos. So each conversation's record is saved as one JSON file in the extension's own storage folder (`work-records/<conversation id>.json`). It holds paths, line ranges, short command endings and decisions only: never file contents, never secrets. TrueForge stays the store of the conversation itself.
+- **Stop keeps the work.** The next message continues from the stopped turn. If TrueForge refuses (the cancel has not landed yet), it continues from the last finished turn, and the work record tells the agent what was done.
+- **Continue.**
+  - The newest session of the conversation is continued when it uses the current model. Otherwise the next message starts a new session in the same conversation.
+  - If TrueForge refuses to continue from the session's last turn (failed or still waiting), the next message starts fresh in the same session.
+  - In every case, the first message carries the "where we are" note.
+- **Reload.** The panel remembers its conversation id with VS Code's view state, so after a reload the same conversation is continued.
+- **Staleness.** Before every message, Moon checks files the agent read or the user applied against the disk (one async stat each, at most `memory.staleCheckMaxFiles`, newest first). Changed or deleted files are named in the note.
+- **Live check (10 Nov, backup model):**
+  - labels are stored and filtered;
+  - another project's key sees nothing;
+  - the summary is merged by PATCH;
+  - the transcript is rebuilt from `listEvents`;
+  - delete removes the conversation.
+  - Found while checking: TrueForge pages `sessions.list` at **25 at most**, and `listEvents` returns the **newest first**, so Moon sorts the events.
+- **Not built yet:** keeping the hidden copy when VS Code closes with the review open ("review pending"). Today the copy is deleted, and the note tells the agent its edits were discarded.
+
+### 5.2 Plan mode, web search and GitHub (Phase 6B extras, as built 10 Nov)
+
+**Plan mode**
+- `propose_plan {title, steps[], files[], risks?}` is a Moon MCP tool that needs approval (`requireApprovalForTools`). TrueForge's tool approval drives the plan card, exactly like the review.
+- **Approve** allows the call; the tool tells the agent to carry out the plan. **Edit** is a deny whose reason is the user's requested changes, so the agent revises and proposes again.
+- **Guard:** `edit_file` is refused while a plan waits.
+  - Moon sets the flag as soon as the `propose_plan` call shows in the stream, and the tool clears it when it runs after approval.
+  - A new user message also clears it: the user moved on, and TrueForge denies the waiting call.
+- Both the approved plan and the requested changes go into the work record as decisions, so they survive compaction, a model switch and a resume.
+- The instructions say to propose a plan for big tasks or ones that start from nothing, after `report_context` and before any edit. Small, clear changes need no plan, so Tasks A and B stay as they were.
+
+**Web search**
+- These are TrueForge's built-in tools `web_search` (`search_queries[]`) and `web_fetch` (`urls[]`), from trueforge-core 0.184's `WebSearch` capability. The provider is Parallel, set by the user in TrueForge's settings.
+- When `extras.webSearch` is on, Moon checks `settings.webSearchProviders.get()` and adds `config.webSearch: {enabled: true}` to the agent spec only when a provider exists. A 404 means none: Moon logs a line and shows a status-bar notice. Moon never reads or sends the key: it uses only the fact that the call succeeded, and TrueForge redacts the key in the response anyway.
+- `trueforge.allowedOutboundHosts` is unchanged: it lists only local hosts, and Parallel is public.
+- The safety rules treat web results as untrusted.
+- **Live check (10 Nov, backup model):** with the provider configured, DeepSeek called `web_search`, the panel step read "Searched the web …", and it answered with a current version number. `config/moon.json` stays `false`, and the demo and evals run without web search.
+
+**GitHub**
+- When `extras.github.enabled` is on and TrueForge has an MCP server named `extras.github.serverName` (`settings.mcpServers.get`), the spec gets `{name, enableTools: ["@all"], requireApprovalForTools: ["@write", "@destructive"]}`. Write tools pause on Part 1's generic approval card, which shows the tool and its exact arguments.
+- The token is a fine-grained one, entered in TrueForge's settings by the user. The setup guide is `config/github-mcp.example.md`.
+- **Known limitation:** probe 5 has not run. Without a token, it is unchecked whether TrueForge's `@write` / `@destructive` selectors match a *remote* server's tools (they depend on the server's tool annotations). Until it is checked, a write tool without annotations might not pause. The guide says to check once that opening a pull request pauses.
+
 ---
 
 ## 6. Resilience and models (B3, Task C)
@@ -267,6 +335,15 @@ Task C: the organisers break the model (unreachable address or invalid key) and 
 - **Moon's own timer (watchdog):** if no streamed event arrives within about **10–12 seconds** of sending, Moon cancels the turn and switches. This covers servers that never answer (TrueForge alone would wait up to minutes).
 
 ---
+
+### 6.1 How it was built (8 Nov)
+
+- **Probed real TrueForge (v0.184.2) before writing code.** Invalid key: `[Model Error] Request failed (401): ...` after about 2 s. Dead address: `[Model Error] Cannot connect to API: ...` in under 0.1 s. Unknown model: session creation fails with 422. Moon's MCP server down: `[MCP Error] ...` (switching models would not help, so it is reported as is). A model that never answers: TrueForge sends `turn.created`, `mcp.initialize` and an **empty** `model.message` at once, then nothing, so the watchdog ignores those and waits for real output.
+- **Pieces** (all in `packages/core/src/resilience/`, no VS Code): `error-classifier.ts` (text → kind, switch or not, retry first on 429), `watchdog.ts` (first-reply timer, then a stall timer that pauses while tools run), `circuit-breaker.ts` (closed / open / recovered, growing probe waits), `model-router.ts` (one per window, shared by inline edit and agent mode), `resilient-chat.ts` (same interface as `AgentChat`, so both features use it unchanged).
+- **Fallback = the same request, from the start, on a new TrueForge session with the other model.** The failed attempt is thrown away first: inline edit drops any proposal; agent mode deletes the hidden copy and makes a fresh one, and closes any approval or review card. The half answer is removed from the panel. Each model is tried at most once per task, so there is no switch loop.
+- **Earlier messages survive a switch:** the new session gets the same opening context plus a short list of the earlier exchanges.
+- **Switching back:** the background probe is a tiny TrueForge turn. While the main model is failing, the extension also watches a hash of the main provider's settings in TrueForge (no model call, no key leaves the method); a change re-checks at once. Switching back happens at the start of the next task and is shown in the panel.
+- **Eval** (`pnpm eval:resilience`, 8 Nov): invalid key switched in 2.1 s, dead address in 0.08 s, hanging server in 12.0 s (the watchdog), both broken gave one clear message after 0.4 s with no proposal, and a fixed main model was found again 0.3 s after its settings changed and the next task ran on it. `git status` clean in every case. 5/5.
 
 ## 7. What we learned about TrueForge
 

@@ -11,7 +11,10 @@
     "build": "pnpm -r run build",
     "typecheck": "pnpm -r run typecheck",
     "test": "pnpm -r run test",
-    "eval:retrieval": "pnpm --filter @moon/evals retrieval"
+    "eval:retrieval": "pnpm --filter @moon/evals retrieval",
+    "eval:cancel": "pnpm --filter @moon/evals cancel",
+    "eval:resilience": "pnpm --filter @moon/evals resilience",
+    "eval:safety": "pnpm --filter @moon/evals safety"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
