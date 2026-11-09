@@ -10,6 +10,9 @@ import { findUsagesTool } from "./find-usages.js";
 import { getErrorsTool } from "./get-errors.js";
 import { listFilesTool } from "./list-files.js";
 import { listPendingChangesTool } from "./list-pending-changes.js";
+import { listPastSessionsTool, readPastSessionTool, saveSummaryTool } from "./memory-tools.js";
+import { workLogTool } from "./work-log.js";
+import { proposePlanTool } from "./propose-plan.js";
 import { proposeEditTool } from "./propose-edit.js";
 import { readFileTool } from "./read-file.js";
 import { runCommandTool } from "./run-command.js";
@@ -27,10 +30,15 @@ export const EDITOR_TOOLS: MoonTool[] = [...LOOK_TOOLS, proposeEditTool] as Moon
 export const AGENT_TOOLS: MoonTool[] = [
   ...LOOK_TOOLS,
   reportContextTool,
+  proposePlanTool,
   editFileTool,
   listPendingChangesTool,
   runCommandTool,
   applyChangesTool,
+  workLogTool,
+  saveSummaryTool,
+  listPastSessionsTool,
+  readPastSessionTool,
 ] as MoonTool[];
 
 /** Every Moon tool (used for step labels in the live log). */

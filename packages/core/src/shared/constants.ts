@@ -42,6 +42,18 @@ export const DEFINITION_PATTERNS: readonly string[] = [
 /** Version Moon's MCP server reports to clients during the MCP handshake. */
 export const MCP_SERVER_VERSION = "0.1.0";
 
+/** What the background check of the main model sends (tiny, so it costs almost nothing). */
+export const PROBE_MESSAGE = "Health check from Moon: do not use any tools, reply with just OK.";
+
+/** Long work (copy, map) gives the extension host back at least this often (ms). */
+export const WORK_SLICE_MS = 12;
+
+/** Files copied at the same time when making the hidden copy. */
+export const COPY_CONCURRENCY = 16;
+
+/** Largest MCP request body Moon's server reads (the MCP SDK's own limit is the same 4 MB). */
+export const MCP_MAX_BODY_BYTES = 4 * 1024 * 1024;
+
 /** Description Moon's MCP server is registered with in TrueForge. */
 export const MOON_MCP_DESCRIPTION =
   "Moon editor tools: list, search and read files of the project open in VS Code, see its errors, and propose edits for review.";
@@ -60,6 +72,9 @@ export const STATUS_MESSAGE_MS = 6000;
 
 /** TrueForge's wrapper tool for calling a deferred tool: call_tool {mcp_server, tool_name, input}. */
 export const TRUEFORGE_CALL_TOOL = "call_tool";
+
+/** TrueForge's built-in tool for asking the user a question (off in Moon's definitions). */
+export const TRUEFORGE_ASK_USER_TOOL = "ask_user_question";
 
 /** Agent mode's MCP endpoint is the editor endpoint's path plus this, registered under the name + this. */
 export const AGENT_ENDPOINT_SUFFIX = "-agent";
@@ -142,5 +157,23 @@ export const RANK_MAX_SUFFIX_LENGTH = 2;
 /** Most names listed under one file in the map. */
 export const MAP_MAX_NAMES_PER_FILE = 12;
 
+/** Most sessions TrueForge returns per sessions.list page (checked on 0.184); Moon pages through more. */
+export const TRUEFORGE_LIST_PAGE_MAX = 25;
+
+/** Longest value TrueForge accepts for one session label (metadata), checked on 0.184. */
+export const TRUEFORGE_LABEL_MAX = 128;
+
+/** Folder (inside the extension's storage folder) that holds each conversation's work record. */
+export const WORK_RECORDS_DIR = "work-records";
+
+/** A work record keeps at most this many entries (the oldest are dropped). */
+export const WORK_RECORD_MAX_ENTRIES = 5000;
+
+/** A file changed on disk counts as changed only this long after the record noted it (Moon's own apply writes it just before). */
+export const STALE_TOLERANCE_MS = 2000;
+
 /** The tool the agent calls to report the files it chose (the panel shows them as the context card). */
 export const REPORT_CONTEXT_TOOL = "report_context";
+
+/** The tool the agent calls to show its plan before a big task (needs the user's approval). */
+export const PROPOSE_PLAN_TOOL = "propose_plan";

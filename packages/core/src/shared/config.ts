@@ -82,10 +82,14 @@ export const MoonConfigSchema = z
       reviewOutputChars: positiveInt,
     }),
     resilience: z.strictObject({
-      /** No streamed event within this time after sending: cancel and switch to backup. */
+      /** No model output within this time after sending: cancel and switch to backup. */
       watchdogMs: positiveInt,
+      /** Later in a turn (after a tool ran), no model output for this long: same. Longer, since big contexts reply slower. */
+      stallMs: positiveInt,
       /** How many times to wait and retry on "too many requests" before switching. */
       rateLimitRetries: z.number().int().min(0),
+      /** Wait before the first retry after "too many requests" (doubles each time). */
+      rateLimitWaitMs: positiveInt,
       circuitBreaker: z.strictObject({
         /** First background check of the main model after switching to backup. */
         firstProbeMs: positiveInt,
@@ -140,6 +144,31 @@ export const MoonConfigSchema = z
       typingCharsPerSecond: positiveInt,
       /** The panel speeds up so it is never more than this far behind the real stream. */
       typingMaxLagMs: positiveInt,
+      /** The approval card for a tool Moon has no card of its own for shows at most this much of its arguments. */
+      approvalArgsMaxChars: positiveInt,
+    }),
+    memory: z.strictObject({
+      /** Most tokens of the work record the work_log tool returns. */
+      workLogMaxTokens: positiveInt,
+      /** Most tokens one read_past_session call returns. */
+      readPastMaxTokens: positiveInt,
+      /** At most this many files are checked for changes on disk before each message. */
+      staleCheckMaxFiles: positiveInt,
+      /** The end of a command's output kept in the work record (characters). */
+      commandTailChars: positiveInt,
+      /** Conversations the /resume list loads at a time. */
+      historyPageSize: positiveInt,
+      /** Hidden copies kept for unfinished reviews (older ones are deleted at start). */
+      maxKeptCopies: positiveInt,
+    }),
+    extras: z.strictObject({
+      /** TrueForge's built-in web search and fetch (needs a provider key set in TrueForge). Off by default. */
+      webSearch: z.boolean(),
+      /** GitHub's MCP server, as registered in TrueForge (Settings, Connectors). Off by default. */
+      github: z.strictObject({
+        enabled: z.boolean(),
+        serverName: z.string().min(1),
+      }),
     }),
   })
   .refine((c) => c.context.mapBudgetMinTokens <= c.context.mapBudgetMaxTokens, {
