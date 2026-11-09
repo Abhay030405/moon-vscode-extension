@@ -4,6 +4,7 @@
 // Phase 0: check that TrueForge is reachable and list the models configured in it.
 // Sessions, turns and streaming are added in later phases.
 
+import { createHash } from "node:crypto";
 import { TrueForge, TrueForgeError, TrueForgeTimeoutError } from "@truefoundry/trueforge-sdk";
 import type { ModelRef, MoonConfig } from "../shared/config.js";
 
@@ -66,6 +67,17 @@ export class TrueForgeClient {
         maxOutputTokens: model.properties.maxOutputTokens,
       })),
     );
+  }
+
+  /**
+   * A hash of one provider's settings in TrueForge (key, address, models): it changes when the
+   * user fixes the key or endpoint, so Moon can re-check a failing main model at once.
+   * Only the hash leaves this method, never the settings. Undefined = provider not found.
+   */
+  async providerFingerprint(provider: string): Promise<string | undefined> {
+    const response = await this.sdk.settings.modelProviders.list();
+    const entry = response.data.find((p) => p.name === provider);
+    return entry ? createHash("sha256").update(JSON.stringify(entry)).digest("hex") : undefined;
   }
 
   /** Never throws: turns every failure into a status the UI can show. */
