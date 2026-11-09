@@ -21,28 +21,36 @@ import {
   expandMentions,
   finalText,
   hunkWithContext,
+  parsePlan,
+  newConversationId,
   REJECTED_HUNK_PREVIEW_LINES,
+  STATUS_MESSAGE_MS,
   reviewReport,
-  type AgentChat,
+  type ResilientChat,
   type ApprovalAnswer,
   type ApprovalDecision,
   type ApprovalRequest,
+  type QuestionRequest,
   type ContextAssembler,
   type FileReview,
   type HunkDecisions,
   type Mention,
   type MoonConfig,
   type MoonEvent,
+  type ConversationInfo,
 } from "@moon/core";
 import type { CommandDecision, ExtensionToPanel, ReviewView } from "@moon/webview-ui/protocol";
 import { VsCodeEditorBridge } from "../editor-bridge/editor-bridge.js";
 import type { PendingChangesDecorations } from "../review/pending-decorations.js";
 import type { EditorHunk, ReviewInEditor } from "../review/review-in-editor.js";
+import { ConversationMemory } from "./conversation-memory.js";
 import type { MoonService } from "./moon-service.js";
 
 /** Tool names in agents/moon-agent.json that need the user's approval. */
 const RUN_COMMAND_TOOL = "run_command";
 const APPLY_CHANGES_TOOL = "apply_changes";
+const READ_PAST_SESSION_TOOL = "read_past_session";
+const PROPOSE_PLAN_TOOL = "propose_plan";
 
 export interface AgentSessionDeps {
   service: MoonService;
@@ -69,6 +77,10 @@ export class AgentSession implements vscode.Disposable {
   private waiting:
     | { kind: "command"; requestId: string; resolve(decision: CommandDecision | undefined): void }
     | { kind: "review"; resolve(choice: ReviewChoice): void }
+    | { kind: "question"; requestId: string; resolve(answer: string | undefined): void }
+    | { kind: "tool"; requestId: string; resolve(allow: boolean | undefined): void }
+    | { kind: "recall"; requestId: string; resolve(allow: boolean | undefined): void }
+    | { kind: "plan"; requestId: string; resolve(answer: { approve: boolean; changes?: string } | undefined): void }
     | undefined;
   /** The approved review, used when TrueForge runs apply_changes. */
   private approved: { files: FileReview[]; accepted: HunkDecisions } | undefined;
@@ -82,53 +94,103 @@ export class AgentSession implements vscode.Disposable {
 
   private constructor(
     readonly chatId: string,
-    private readonly chat: AgentChat,
+    private readonly chat: ResilientChat,
     private readonly config: MoonConfig,
     private readonly assembler: ContextAssembler,
     private readonly windowTokens: number,
     private readonly root: string,
     private readonly deps: AgentSessionDeps,
+    readonly memory: ConversationMemory,
   ) {}
 
-  static async create(chatId: string, deps: AgentSessionDeps): Promise<AgentSession> {
+  /**
+   * A new chat, or (with `resume`) a conversation from the history continued: its newest
+   * TrueForge session is continued when it uses the current model; otherwise the next message
+   * starts a new session of the same conversation. Either way the agent gets the work record.
+   */
+  static async create(chatId: string, deps: AgentSessionDeps, resume?: ConversationInfo): Promise<AgentSession> {
     const root = deps.service.projectRoot();
     if (!root) throw new Error("Open a folder first: Moon's tools work on the open project.");
-    const { chat, config, assembler, windowTokens } = await deps.service.createChat();
-    return new AgentSession(chatId, chat, config, assembler, windowTokens, root, deps);
+    const conversation = resume?.id ?? newConversationId();
+    // The session is made after its chat, so the chat's hooks reach it through this variable.
+    let session: AgentSession | undefined;
+    const { chat, config, assembler, windowTokens } = await deps.service.createChat({
+      conversation,
+      beforeRestart: () => session?.freshRun(),
+      workNote: () => session?.memory.workNote(),
+    });
+    const memory = await ConversationMemory.open(conversation, deps.service, config, root, deps.output);
+    session = new AgentSession(chatId, chat, config, assembler, windowTokens, root, deps, memory);
+    if (resume) {
+      const newest = resume.sessions[0];
+      if (newest) chat.attach(newest.id, newest.lastTurnId);
+      memory.resumed(chat.position?.sessionId);
+    }
+    return session;
   }
 
   /** Sends a message; answers every approval the agent asks for until the agent is done. */
   async send(text: string, mentions: readonly Mention[] = []): Promise<void> {
     this.stopped = false;
-    try {
-      this.ensureRun();
-    } catch (err) {
-      this.emit({ type: "done", status: "error", message: (err as Error).message });
-      return;
-    }
-    const mentionText = await this.assembleContext(text, mentions);
-    const message = [...this.notes, text, mentionText].filter(Boolean).join("\n\n");
+    // A new message instead of answering a plan: the user moved on, so edits are not held back.
+    if (this.run) this.run.tools.planWaiting = false;
+    // The hidden copy and the project map are made at the same time, both without holding
+    // the editor (async I/O, short slices).
+    const [ready, mentionText] = await Promise.all([this.ensureRun(), this.assembleContext(text, mentions)]);
+    // Stop pressed while preparing: no turn was started, so end it here.
+    if (this.stopped) return this.emit({ type: "done", status: "cancelled" });
+    if (ready !== true) return this.emit({ type: "done", status: "error", message: ready.error });
+    const memoryNote = await this.memory.noteForNextMessage();
+    const message = [memoryNote, ...this.notes, text, mentionText].filter(Boolean).join("\n\n");
     this.notes = [];
+    this.memory.request(text, this.chat.model);
     await this.chat.send(message, this.emit);
-    while (this.chat.waitingFor.length > 0 && !this.stopped) {
-      const answers = await this.decide(this.chat.waitingFor);
-      if (!answers || this.stopped) return;
-      await this.chat.answer(answers, this.emit);
+    // The agent may pause for approvals or ask a question; answer each until it is done.
+    while (!this.stopped) {
+      if (this.chat.waitingFor.length > 0) {
+        const answers = await this.decide(this.chat.waitingFor);
+        if (!answers || this.stopped) return;
+        await this.chat.answer(answers, this.emit);
+      } else if (this.chat.question) {
+        const answer = await this.askUser(this.chat.question);
+        if (answer === undefined || this.stopped) return;
+        await this.chat.answerQuestion(answer, this.emit);
+      } else {
+        return;
+      }
     }
   }
 
-  /** Stop: cancels the turn, kills a running command, closes any card and deletes the copy. */
-  stop(): void {
+  /**
+   * Stop, in this order: kill a running command (and what it started), cancel the TrueForge
+   * turn (the panel shows "cancelled" at once), close any approval or review card, delete the
+   * hidden copy, then say "Stopped". The user's files were never touched by the run, so
+   * nothing needs undoing. The slow part (deleting the copy) is async: the editor never waits.
+   */
+  async stop(): Promise<void> {
     this.stopped = true;
+    this.memory.stopped();
+    // No turn streaming (Moon was waiting for the user: an approval, a review, or a question):
+    // nothing else will report the end, so the panel is told here. Stop always ends the turn.
+    const turnRunning = this.chat.turnRunning;
+    this.run?.stop();
     this.chat.stop();
     this.resolveWaiting();
-    this.disposeRun();
+    if (!turnRunning) this.emit({ type: "done", status: "cancelled" });
+    const hadRun = this.run !== undefined;
+    await this.disposeRun();
+    if (hadRun) vscode.window.setStatusBarMessage("$(debug-stop) Moon stopped. Its working copy was deleted.", STATUS_MESSAGE_MS);
   }
 
   // ---- answers from the panel ----
 
   commandDecision(requestId: string, decision: CommandDecision): void {
     if (this.waiting?.kind === "command" && this.waiting.requestId === requestId) this.resolveWaiting(decision);
+  }
+
+  /** The user picked an option or typed their own answer on the question card. */
+  questionAnswer(requestId: string, answer: string): void {
+    if (this.waiting?.kind === "question" && this.waiting.requestId === requestId && answer.trim()) this.resolveWaiting(answer.trim());
   }
 
   reviewApply(accepted: Record<string, number[]>): void {
@@ -182,6 +244,7 @@ export class AgentSession implements vscode.Disposable {
       return;
     }
     await saveAll(toSave);
+    this.memory.undo([...applied.keys()].filter((rel) => !skipped.includes(rel)));
     this.notes.push("(Note: the user undid every change applied by your last apply_changes.)");
     if (skipped.length) {
       void vscode.window.showWarningMessage(`Moon did not undo ${skipped.join(", ")}: changed after the apply.`);
@@ -189,13 +252,22 @@ export class AgentSession implements vscode.Disposable {
     this.deps.post({ type: "undone", chatId: this.chatId, files: restored });
   }
 
+  /** New chat or panel closed: stop quietly (no "Stopped" message). */
   dispose(): void {
-    this.stop();
+    this.stopped = true;
+    this.run?.stop();
+    this.chat.stop();
+    this.resolveWaiting();
+    void this.disposeRun();
   }
 
   // ---- approvals ----
 
   private readonly emit = (event: MoonEvent): void => {
+    this.memory.observe(event, this.chat.model);
+    // A plan was proposed: no edits until the user approves it (the guard in edit_file).
+    if (event.type === "tool-call" && event.tool === PROPOSE_PLAN_TOOL && this.run) this.run.tools.planWaiting = true;
+    if (event.type === "session") this.deps.post({ type: "conversation", chatId: this.chatId, conversationId: this.memory.id });
     this.deps.post({ type: "event", chatId: this.chatId, event });
   };
 
@@ -212,9 +284,96 @@ export class AgentSession implements vscode.Disposable {
   private async decideOne(request: ApprovalRequest): Promise<ApprovalDecision | undefined> {
     if (request.tool === RUN_COMMAND_TOOL) return this.decideCommand(request);
     if (request.tool === APPLY_CHANGES_TOOL) return this.decideReview();
-    // Only the two tools above need approval in the agent definition.
-    this.deps.output.appendLine(`[agent] unexpected approval for ${request.tool}; allowed`);
-    return { allow: true };
+    if (request.tool === READ_PAST_SESSION_TOOL) return this.decideRecall(request);
+    if (request.tool === PROPOSE_PLAN_TOOL) return this.decidePlan(request);
+    // Any other tool that pauses (for example a GitHub write): the user sees exactly what it
+    // will do and decides. Nothing is ever allowed silently.
+    return this.decideTool(request);
+  }
+
+  private async decideTool(request: ApprovalRequest): Promise<ApprovalDecision | undefined> {
+    const full = JSON.stringify(request.args, null, 2);
+    const max = this.config.ui.approvalArgsMaxChars;
+    const allow = await new Promise<boolean | undefined>((resolve) => {
+      this.waiting = { kind: "tool", requestId: request.toolCallId, resolve };
+      this.deps.post({
+        type: "tool-approval",
+        chatId: this.chatId,
+        approval: { requestId: request.toolCallId, tool: request.tool, args: full.slice(0, max), truncated: full.length > max },
+      });
+    });
+    this.deps.post({ type: "tool-approval", chatId: this.chatId, approval: undefined });
+    if (allow === undefined) return undefined;
+    this.deps.output.appendLine(`[agent] ${request.tool}: ${allow ? "allowed" : "denied"} by the user`);
+    return allow ? { allow: true } : { allow: false, reason: `The user denied ${request.tool}.` };
+  }
+
+  /** The user answered the approval card of a tool with no card of its own. */
+  toolDecision(requestId: string, allow: boolean): void {
+    if (this.waiting?.kind === "tool" && this.waiting.requestId === requestId) this.resolveWaiting(allow);
+  }
+
+  /**
+   * read_past_session: old conversations could carry planted instructions, so the user decides
+   * (the recall card, with a link to open that conversation first). A conversation the user
+   * picked themselves (continued from the history) needs no approval.
+   */
+  private async decideRecall(request: ApprovalRequest): Promise<ApprovalDecision | undefined> {
+    const id = String(request.args.id ?? "");
+    if (this.memory.named.has(id)) return { allow: true };
+    let past: ConversationInfo | undefined;
+    try {
+      past = await this.memory.findPast(id);
+    } catch (err) {
+      this.deps.output.appendLine(`[memory] could not look up ${id}: ${(err as Error).message}`);
+    }
+    if (!past) return { allow: false, reason: `There is no earlier conversation with id ${id} in this project.` };
+    const found = past;
+    const part = typeof request.args.part === "string" ? request.args.part : "work";
+    const allow = await new Promise<boolean | undefined>((resolve) => {
+      this.waiting = { kind: "recall", requestId: request.toolCallId, resolve };
+      this.deps.post({
+        type: "recall-approval",
+        chatId: this.chatId,
+        recall: { requestId: request.toolCallId, conversationId: found.id, title: found.title, updatedAt: found.updatedAt, part, summary: found.summary },
+      });
+    });
+    this.deps.post({ type: "recall-approval", chatId: this.chatId, recall: undefined });
+    if (allow === undefined) return undefined;
+    this.memory.decision(`the user ${allow ? "allowed" : "declined"} reading the earlier conversation "${found.title}"`);
+    if (allow) this.memory.named.add(id);
+    return allow ? { allow: true } : { allow: false, reason: "The user declined: do not use that earlier conversation." };
+  }
+
+  /**
+   * propose_plan: the plan card. Approve = allow (the agent carries out the plan). Edit = deny
+   * with the user's requested changes as the reason, so the agent revises and proposes again.
+   */
+  private async decidePlan(request: ApprovalRequest): Promise<ApprovalDecision | undefined> {
+    const plan = parsePlan(request.args);
+    const answer = await new Promise<{ approve: boolean; changes?: string } | undefined>((resolve) => {
+      this.waiting = { kind: "plan", requestId: request.toolCallId, resolve };
+      this.deps.post({ type: "plan-approval", chatId: this.chatId, plan: { requestId: request.toolCallId, ...plan } });
+    });
+    this.deps.post({ type: "plan-approval", chatId: this.chatId, plan: undefined });
+    if (answer === undefined) return undefined;
+    if (answer.approve) {
+      this.memory.decision(`the user approved the plan "${plan.title}": ${plan.steps.join("; ")}`);
+      return { allow: true };
+    }
+    const changes = answer.changes?.trim() || "The user did not approve this plan.";
+    this.memory.decision(`the user asked to change the plan "${plan.title}": ${changes}`);
+    return { allow: false, reason: `The user wants changes to the plan: ${changes}\nRevise it and call propose_plan again before editing.` };
+  }
+
+  /** The user approved the plan, or asked for changes. */
+  planDecision(requestId: string, approve: boolean, changes?: string): void {
+    if (this.waiting?.kind === "plan" && this.waiting.requestId === requestId) this.resolveWaiting({ approve, changes });
+  }
+
+  /** The user answered the recall card. */
+  recallDecision(requestId: string, allow: boolean): void {
+    if (this.waiting?.kind === "recall" && this.waiting.requestId === requestId) this.resolveWaiting(allow);
   }
 
   private async decideCommand(request: ApprovalRequest): Promise<ApprovalDecision | undefined> {
@@ -231,7 +390,10 @@ export class AgentSession implements vscode.Disposable {
     });
     this.deps.post({ type: "command-approval", chatId: this.chatId, approval: undefined });
     if (decision === undefined) return undefined;
-    if (decision === "deny") return { allow: false, reason: "The user denied this command." };
+    if (decision === "deny") {
+      this.memory.decision(`the user denied the command: ${command}`);
+      return { allow: false, reason: "The user denied this command." };
+    }
     if (decision === "always") this.alwaysAllowed.add(command);
     return { allow: true };
   }
@@ -255,7 +417,8 @@ export class AgentSession implements vscode.Disposable {
     this.deps.inEditor.show(new Map());
     if (choice === undefined) return undefined;
     if (choice === "discard") {
-      this.disposeRun();
+      this.memory.decision("the user discarded all the changes on the review screen");
+      void this.disposeRun();
       return {
         allow: false,
         reason: "The user discarded all your changes and your working copy was thrown away. Do not make more changes unless the user asks.",
@@ -323,6 +486,12 @@ export class AgentSession implements vscode.Disposable {
     }
     await saveAll(toSave);
     this.lastApply = applied.size > 0 ? applied : undefined;
+    this.memory.apply(
+      files.map((f) => {
+        const accepted = applied.has(f.rel) ? (approved.accepted.get(f.rel)?.size ?? 0) : 0;
+        return { path: f.rel, accepted, rejected: f.hunks.length - accepted };
+      }),
+    );
     this.deps.post({ type: "applied", chatId: this.chatId, files: applied.size, hunks, undoable: applied.size > 0 });
     return reviewReport(files, approved.accepted, REJECTED_HUNK_PREVIEW_LINES);
   }
@@ -362,29 +531,95 @@ export class AgentSession implements vscode.Disposable {
 
   // ---- helpers ----
 
-  private ensureRun(): void {
-    if (this.run) return;
-    const editor = new VsCodeEditorBridge(this.root);
-    this.run = new AgentRun({ projectRoot: this.root, config: this.config, editor, applyApproved: () => this.applyApproved() });
-    this.deps.service.setActiveRun(this.run);
-    this.deps.output.appendLine(`[agent] working copy: ${this.run.copy.dir}`);
+  /**
+   * The model failed and the same request starts again on the other one: throw away what the
+   * failed attempt did (its hidden copy, any open approval or review card) and start from a
+   * fresh copy of the project. The user's files were never touched by the failed attempt.
+   */
+  private async freshRun(): Promise<void> {
+    this.run?.stop();
+    this.resolveWaiting();
+    this.deps.post({ type: "command-approval", chatId: this.chatId, approval: undefined });
+    this.deps.post({ type: "review", chatId: this.chatId, review: undefined });
+    this.deps.post({ type: "question", chatId: this.chatId, question: undefined });
+    this.deps.post({ type: "tool-approval", chatId: this.chatId, approval: undefined });
+    this.deps.post({ type: "recall-approval", chatId: this.chatId, recall: undefined });
+    this.deps.post({ type: "plan-approval", chatId: this.chatId, plan: undefined });
+    await this.disposeRun();
+    if (this.stopped) return;
+    const ready = await this.ensureRun();
+    if (ready !== true) throw new Error(ready.error);
+    this.deps.output.appendLine("[agent] model switched: the request starts again on a fresh working copy");
   }
 
-  private disposeRun(): void {
-    if (!this.run) return;
-    this.deps.service.setActiveRun(undefined);
-    this.run.dispose();
+  /** Makes the hidden copy if this chat has none. True when ready, else the reason. */
+  private async ensureRun(): Promise<true | { error: string }> {
+    if (this.run) return true;
+    const editor = new VsCodeEditorBridge(this.root);
+    let run: AgentRun;
+    try {
+      run = await AgentRun.create({
+        projectRoot: this.root,
+        config: this.config,
+        editor,
+        applyApproved: () => this.applyApproved(),
+        onCommand: (result) => this.memory.command(result),
+      });
+    } catch (err) {
+      return { error: (err as Error).message };
+    }
+    // Stopped while the copy was being made: throw it away at once.
+    if (this.stopped || this.run) {
+      void run.dispose();
+      return true;
+    }
+    this.run = run;
+    run.tools.memory = this.memory.hooks();
+    this.deps.service.setActiveRun(run);
+    this.deps.output.appendLine(`[agent] working copy: ${run.copy.dir}`);
+    return true;
+  }
+
+  private async disposeRun(): Promise<void> {
+    const run = this.run;
+    if (!run) return;
     this.run = undefined;
+    this.deps.service.setActiveRun(undefined);
     this.approved = undefined;
     this.alwaysAllowed.clear();
+    await run.dispose();
   }
 
-  private resolveWaiting(answer?: CommandDecision | ReviewChoice): void {
+  private resolveWaiting(answer?: CommandDecision | ReviewChoice | string | boolean | { approve: boolean; changes?: string }): void {
     const waiting = this.waiting;
     this.waiting = undefined;
     if (!waiting) return;
     if (waiting.kind === "command") waiting.resolve(answer as CommandDecision | undefined);
+    else if (waiting.kind === "question") waiting.resolve(answer as string | undefined);
+    else if (waiting.kind === "tool" || waiting.kind === "recall") waiting.resolve(answer as boolean | undefined);
+    else if (waiting.kind === "plan") waiting.resolve(answer as { approve: boolean; changes?: string } | undefined);
     else waiting.resolve(answer as ReviewChoice);
+  }
+
+  /**
+   * The agent asked a question (ask_user_question): the panel shows it with the agent's options
+   * and a box for the user's own answer. Undefined = stopped before answering.
+   */
+  private async askUser(question: QuestionRequest): Promise<string | undefined> {
+    const answer = await new Promise<string | undefined>((resolve) => {
+      this.waiting = { kind: "question", requestId: question.toolCallId, resolve };
+      this.deps.post({
+        type: "question",
+        chatId: this.chatId,
+        question: { requestId: question.toolCallId, question: question.question, options: question.options },
+      });
+    });
+    this.deps.post({ type: "question", chatId: this.chatId, question: undefined });
+    if (answer !== undefined) {
+      this.deps.output.appendLine(`[agent] question "${question.question}" answered: ${answer}`);
+      this.memory.decision(`the user answered "${answer}"`);
+    }
+    return answer;
   }
 
   /** The real file's text: the editor's (unsaved changes included) or the disk's; null = missing. */

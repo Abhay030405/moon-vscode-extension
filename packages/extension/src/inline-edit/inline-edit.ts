@@ -12,7 +12,7 @@ import * as vscode from "vscode";
 import {
   buildInlinePrompt,
   STATUS_MESSAGE_MS,
-  type AgentChat,
+  type ResilientChat,
   type MoonConfig,
   type MoonEvent,
   type ToolContext,
@@ -206,7 +206,9 @@ interface SessionDeps {
 /** One instruction box and what happens in it: the run, then the review. */
 class InlineSession {
   private reviewing = false;
-  private chat: AgentChat | undefined;
+  private chat: ResilientChat | undefined;
+  /** The edit the agent proposed in this run (dropped if the model fails and the run restarts). */
+  private proposal: string | undefined;
   private tools: ToolContext | undefined;
   private config: MoonConfig | undefined;
   private running = false;
@@ -235,10 +237,15 @@ class InlineSession {
 
     const view = new RunView((body) => this.show(body));
     const baseText = document.getText();
-    let proposal: string | undefined;
+    this.proposal = undefined;
     try {
       if (!this.chat) {
-        const created = await this.deps.service.createInlineEdit();
+        const created = await this.deps.service.createInlineEdit({
+          // The same request restarts on the other model: forget the failed attempt's proposal.
+          beforeRestart: () => {
+            this.proposal = undefined;
+          },
+        });
         this.chat = created.chat;
         this.tools = created.tools;
         this.config = created.config;
@@ -246,7 +253,7 @@ class InlineSession {
       const tools = this.tools!;
       const { rel } = tools.paths.resolve(document.uri.fsPath);
       if (tools.secrets.isSecret(rel)) throw new Error(`"${rel}" may contain secrets, so Moon does not edit it.`);
-      tools.inlineTarget = { rel, onProposal: (text) => (proposal = text) };
+      tools.inlineTarget = { rel, onProposal: (text) => (this.proposal = text) };
 
       const prompt = buildInlinePrompt(
         {
@@ -261,7 +268,7 @@ class InlineSession {
         { contextLines: this.config!.inline.contextLines, maxProblems: this.config!.inline.maxProblems },
       );
       this.deps.output.appendLine(`[inline] ${rel} ${thread.label}: ${instruction}`);
-      await this.chat.send(prompt, (event) => {
+      await this.chat!.send(prompt, (event) => {
         if (!this.disposed) view.handle(event);
       });
     } catch (err) {
@@ -273,6 +280,7 @@ class InlineSession {
     }
     if (this.disposed) return;
 
+    const proposal = this.proposal;
     if (view.status === "done" && proposal !== undefined) {
       if (document.getText() !== baseText) {
         view.note("The file changed while Moon was working, so the proposal was dropped. Ask again.");
@@ -356,6 +364,17 @@ class RunView {
         break;
       case "notice":
         this.notes.push(event.text);
+        break;
+      case "model-switch":
+        if (event.direction === "fallback") {
+          // The failed attempt is thrown away; the same request starts fresh on the backup.
+          this.steps.length = 0;
+          this.answer = "";
+          this.sessionUrl = undefined;
+          this.notes.push(`$(arrow-swap) **${escapeMd(event.from)}** failed (${event.reason ?? "error"}). Switched to **${escapeMd(event.to)}**, starting again. Nothing was changed.`);
+        } else {
+          this.notes.push(`$(check) The main model **${escapeMd(event.to)}** answers again, so Moon uses it.`);
+        }
         break;
       case "done":
         // The inline agent has no tools that need approval, so a pause is unexpected: treat it as an error.
