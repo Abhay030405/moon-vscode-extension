@@ -8,7 +8,10 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "retrieval": "esbuild retrieval.ts --bundle --platform=node --format=cjs --outfile=dist/retrieval.cjs --log-level=warning && node dist/retrieval.cjs"
+    "retrieval": "esbuild retrieval.ts --bundle --platform=node --format=cjs --outfile=dist/retrieval.cjs --log-level=warning && node dist/retrieval.cjs",
+    "cancel": "esbuild cancel.ts --bundle --platform=node --format=cjs --outfile=dist/cancel.cjs --log-level=warning && node dist/cancel.cjs",
+    "resilience": "esbuild resilience.ts --bundle --platform=node --format=cjs --outfile=dist/resilience.cjs --log-level=warning && node dist/resilience.cjs",
+    "safety": "esbuild safety.ts --bundle --platform=node --format=cjs --outfile=dist/safety.cjs --log-level=warning && node dist/safety.cjs"
   },
   "dependencies": {
     "@moon/core": "workspace:*"

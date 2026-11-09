@@ -14,27 +14,19 @@
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import {
-  AGENT_TOOLS,
-  AgentChat,
   AgentRun,
-  ContextAssembler,
-  EDITOR_TOOLS,
-  MOON_MCP_DESCRIPTION,
   MapCache,
   SecretGuard,
   TagReader,
   TrueForgeClient,
   buildProjectMap,
-  endpointNames,
   mapBudget,
   modelRef,
-  registerMcpServer,
-  startMcpServer,
   type ApprovalAnswer,
   type MoonConfig,
   type MoonEvent,
 } from "@moon/core";
-import { EVALS_DIR, REPO_ROOT, flag, freshCheckout, loadConfig, saveResults, treeSitterPaths } from "./runner";
+import { EVALS_DIR, flag, freshCheckout, loadConfig, saveResults, startLive, treeSitterPaths, type Live } from "./runner";
 import { ranksOf, recallAt, scoreRetrieval, type RetrievalScore } from "./scorers";
 
 interface Scenario {
@@ -96,7 +88,7 @@ async function main(): Promise<void> {
   const results: ScenarioResult[] = [];
   try {
     for (const scenario of scenarios) {
-      const ranked = rankedFiles(checkout.root, scenario.request, reader, config, windowTokens);
+      const ranked = await rankedFiles(checkout.root, scenario.request, reader, config, windowTokens);
       const result: ScenarioResult = { id: scenario.id, request: scenario.request, must: scenario.must, mapRanks: ranksOf(ranked, scenario.must) };
       if (live) {
         result.agent = await runAgent(live, checkout.root, scenario, windowTokens, file.turnTimeoutMs);
@@ -123,9 +115,9 @@ async function main(): Promise<void> {
 }
 
 /** The project map's order of files for this request (what the agent sees first). */
-function rankedFiles(root: string, request: string, reader: TagReader, config: MoonConfig, windowTokens: number): string[] {
+async function rankedFiles(root: string, request: string, reader: TagReader, config: MoonConfig, windowTokens: number): Promise<string[]> {
   const secrets = new SecretGuard(config.safety);
-  const map = buildProjectMap({
+  const map = await buildProjectMap({
     root,
     reader,
     cache: new MapCache(),
@@ -139,45 +131,11 @@ function rankedFiles(root: string, request: string, reader: TagReader, config: M
   return map.shown;
 }
 
-interface Live {
-  config: MoonConfig;
-  client: TrueForgeClient;
-  assembler: ContextAssembler;
-  setRun(run: AgentRun | undefined): void;
-  close(): Promise<void>;
-}
-
-/** Moon's MCP server, registered in TrueForge, serving whichever run is active. */
-async function startLive(config: MoonConfig, client: TrueForgeClient): Promise<Live> {
-  const names = endpointNames(config.mcp);
-  let active: AgentRun | undefined;
-  const mcp = await startMcpServer(config.mcp, [
-    { name: names.editor, path: names.editorPath, tools: EDITOR_TOOLS, context: () => undefined },
-    { name: names.agent, path: names.agentPath, tools: AGENT_TOOLS, context: () => active?.tools },
-  ]);
-  await registerMcpServer(client, { name: names.agent, url: mcp.urls[names.agent]!, description: MOON_MCP_DESCRIPTION });
-  return {
-    config,
-    client,
-    assembler: new ContextAssembler(treeSitterPaths(), undefined, config),
-    setRun: (run) => (active = run),
-    close: () => mcp.close(),
-  };
-}
-
 async function runAgent(live: Live, root: string, scenario: Scenario, windowTokens: number, timeoutMs: number): Promise<AgentResult> {
-  const { config, client } = live;
-  const names = endpointNames(config.mcp);
-  const run = new AgentRun({ projectRoot: root, config, applyApproved: async () => DENY_REASON });
+  const { config } = live;
+  const run = await AgentRun.create({ projectRoot: root, config, applyApproved: async () => DENY_REASON });
   live.setRun(run);
-  const chat = new AgentChat({
-    client,
-    definitionFile: path.join(REPO_ROOT, config.agent.definitionFile),
-    model: modelRef(config.models.main),
-    mcpServer: names.agent,
-    baseUrl: config.trueforge.baseUrl,
-    sessionUrlTemplate: config.trueforge.sessionUrlTemplate,
-  });
+  const chat = live.newChat();
   const readText = (rel: string) => {
     try {
       return readFileSync(path.join(root, rel), "utf8");
@@ -229,7 +187,7 @@ async function runAgent(live: Live, root: string, scenario: Scenario, windowToke
     clearTimeout(timer);
     chat.stop();
     live.setRun(undefined);
-    run.dispose();
+    await run.dispose();
   }
 
   const picked = chosen ?? [];

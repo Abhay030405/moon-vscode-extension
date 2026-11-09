@@ -1,5 +1,5 @@
 {
-  "$comment": "Moon's agent-mode definition, sent to TrueForge as an inline AgentSpec when a chat starts. Moon fills the {{...}} placeholders: {{model}} from config/moon.json (models.main, or models.backup on fallback), {{mcpServer}} with the agent endpoint's name (mcp.serverName + '-agent'), {{file:...}} with the text of that file (relative to this folder). Moon also adds, when the session is created, an opening message with the project's rules file and the project map, and the compaction threshold (from the model's window). The agent works in a hidden copy of the project: looking and editing never pause; run_command and apply_changes pause for the user's approval (apply_changes opens Moon's review screen).",
+  "$comment": "Moon's agent-mode definition, sent to TrueForge as an inline AgentSpec when a chat starts. Moon fills the {{...}} placeholders: {{model}} from config/moon.json (models.main, or models.backup on fallback), {{mcpServer}} with the agent endpoint's name (mcp.serverName + '-agent'), {{file:...}} with the text of that file (relative to this folder). Moon also adds, when the session is created, an opening message with the project's rules file and the project map, and the compaction threshold (from the model's window). The agent works in a hidden copy of the project: looking and editing never pause; run_command and apply_changes pause for the user's approval (apply_changes opens Moon's review screen). TrueForge's ask_user_question tool is on: when the request is unclear the agent asks with about 3 options; Moon's panel shows them as buttons plus a box for the user's own answer, and sends the answer back as the tool's result. Memory (Phase 6B): work_log (what this conversation did), save_summary (two lines for the history list, the last step of a task), list_past_sessions and read_past_session (earlier conversations of this project). read_past_session pauses for approval: Moon shows the recall card, or allows it at once when the user picked that conversation. Plan mode: propose_plan pauses for approval; Moon shows the plan card (Approve, or Edit = a deny carrying the user's changes), and edit_file is refused while a plan waits.",
   "model": {
     "name": "{{model}}"
   },
@@ -15,10 +15,15 @@
         "read_file",
         "get_errors",
         "report_context",
+        "propose_plan",
         "edit_file",
         "list_pending_changes",
         "run_command",
-        "apply_changes"
+        "apply_changes",
+        "work_log",
+        "save_summary",
+        "list_past_sessions",
+        "read_past_session"
       ],
       "preloadTools": [
         "search_text",
@@ -27,16 +32,22 @@
         "report_context",
         "edit_file",
         "run_command",
-        "apply_changes"
+        "apply_changes",
+        "propose_plan"
       ],
       "requireApprovalForTools": [
         "run_command",
-        "apply_changes"
+        "apply_changes",
+        "read_past_session",
+        "propose_plan"
       ]
     }
   ],
   "config": {
     "iterationLimit": 60,
+    "askUserQuestions": {
+      "enabled": true
+    },
     "dynamicSubAgents": {
       "enabled": true
     }

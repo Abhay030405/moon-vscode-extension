@@ -6,15 +6,41 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
-import { CONFIG_DIR, CONFIG_FILE_NAME, loadMoonConfig, type MoonConfig, type TagReaderPaths } from "@moon/core";
+import {
+  AGENT_TOOLS,
+  AgentChat,
+  CONFIG_DIR,
+  CONFIG_FILE_NAME,
+  ContextAssembler,
+  EDITOR_TOOLS,
+  MOON_MCP_DESCRIPTION,
+  endpointNames,
+  loadMoonConfig,
+  modelRef,
+  registerMcpServer,
+  startMcpServer,
+  type AgentRun,
+  type MoonConfig,
+  type TagReaderPaths,
+  type TrueForgeClient,
+} from "@moon/core";
 
 /** The evals run from a bundle in packages/evals/dist. */
 export const EVALS_DIR = path.resolve(__dirname, "..");
 export const REPO_ROOT = path.resolve(EVALS_DIR, "..", "..");
 export const RESULTS_DIR = path.join(EVALS_DIR, "results");
 
+/**
+ * Added to mcp.serverName for the evals' own MCP server. TrueForge finds an MCP server by its
+ * name, so an eval registering under the extension's name would take over the user's open
+ * VS Code chats (their tool calls would reach the eval's test checkout instead of their project).
+ */
+const EVAL_SERVER_SUFFIX = "-eval";
+
+/** Moon's config, with the evals' own MCP server name (see EVAL_SERVER_SUFFIX). */
 export function loadConfig(): MoonConfig {
-  return loadMoonConfig(path.join(REPO_ROOT, CONFIG_DIR, CONFIG_FILE_NAME));
+  const config = loadMoonConfig(path.join(REPO_ROOT, CONFIG_DIR, CONFIG_FILE_NAME));
+  return { ...config, mcp: { ...config.mcp, serverName: `${config.mcp.serverName}${EVAL_SERVER_SUFFIX}` } };
 }
 
 /** tree-sitter's runtime, grammars and Moon's tag queries (as in core's tests). */
@@ -58,6 +84,37 @@ export function freshCheckout(name: string): { root: string; commit: string; dis
   return { root, commit: repo.commit, dispose: () => rmSync(temp, { recursive: true, force: true }) };
 }
 
+/**
+ * Makes `root` a git repo with one commit of everything, so `gitStatus` can show what changed
+ * (the evals check that a stopped or failed run leaves the project exactly as it was).
+ */
+export function gitBaseline(root: string): void {
+  const git = (...args: string[]) => execFileSync("git", ["-C", root, ...args], { stdio: "pipe" });
+  git("init", "--quiet");
+  git("add", "--all");
+  git("-c", "user.name=moon-eval", "-c", "user.email=moon-eval@localhost", "commit", "--quiet", "--no-gpg-sign", "-m", "baseline");
+}
+
+/** `git status --porcelain` of `root` (empty = unchanged). */
+export function gitStatus(root: string): string {
+  return execFileSync("git", ["-C", root, "status", "--porcelain"], { stdio: "pipe" }).toString().trim();
+}
+
+/** Process ids whose command line contains `marker` (to find commands left running). */
+export function processesWith(marker: string): number[] {
+  const out =
+    process.platform === "win32"
+      ? execFileSync("powershell", [
+          "-NoProfile",
+          "-Command",
+          `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${marker}*' -and $_.CommandLine -notlike '*Get-CimInstance*' } | Select-Object -ExpandProperty ProcessId`,
+        ])
+      : execFileSync("ps", ["-A", "-o", "pid=,args="]);
+  const lines = out.toString().split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (process.platform === "win32") return lines.map(Number).filter((n) => n > 0);
+  return lines.filter((l) => l.includes(marker) && !l.includes("ps -A")).map((l) => Number(l.split(/\s+/)[0]));
+}
+
 /** Saves <name>-<time>.json and .md in results/ and returns their paths. */
 export function saveResults(name: string, data: unknown, report: string): { json: string; md: string } {
   mkdirSync(RESULTS_DIR, { recursive: true });
@@ -75,4 +132,42 @@ export function flag(name: string): string | true | undefined {
   if (i < 0) return undefined;
   const next = process.argv[i + 1];
   return next && !next.startsWith("--") ? next : true;
+}
+
+/** Moon's side of a live eval: its MCP server registered in TrueForge, serving one run at a time. */
+export interface Live {
+  config: MoonConfig;
+  client: TrueForgeClient;
+  assembler: ContextAssembler;
+  /** The run whose hidden copy the agent tools work in (undefined = refuse calls). */
+  setRun(run: AgentRun | undefined): void;
+  /** A new TrueForge chat with the committed agent definition and the main model. */
+  newChat(model?: string): AgentChat;
+  close(): Promise<void>;
+}
+
+export async function startLive(config: MoonConfig, client: TrueForgeClient): Promise<Live> {
+  const names = endpointNames(config.mcp);
+  let active: AgentRun | undefined;
+  const mcp = await startMcpServer(config.mcp, [
+    { name: names.editor, path: names.editorPath, tools: EDITOR_TOOLS, context: () => undefined },
+    { name: names.agent, path: names.agentPath, tools: AGENT_TOOLS, context: () => active?.tools },
+  ]);
+  await registerMcpServer(client, { name: names.agent, url: mcp.urls[names.agent]!, description: MOON_MCP_DESCRIPTION });
+  return {
+    config,
+    client,
+    assembler: new ContextAssembler(treeSitterPaths(), undefined, config),
+    setRun: (run) => (active = run),
+    newChat: (model = modelRef(config.models.main)) =>
+      new AgentChat({
+        client,
+        definitionFile: path.join(REPO_ROOT, config.agent.definitionFile),
+        model,
+        mcpServer: names.agent,
+        baseUrl: config.trueforge.baseUrl,
+        sessionUrlTemplate: config.trueforge.sessionUrlTemplate,
+      }),
+    close: () => mcp.close(),
+  };
 }
