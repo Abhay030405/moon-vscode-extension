@@ -1,10 +1,12 @@
 // The project map (Aider-style): the most relevant files for the request, each with the main
 // names it defines and their lines, packed into a token budget. The agent gets it at the
 // start of agent mode, so it can go straight to the right files instead of searching blind.
+// Parsing runs in short slices (TimeSlicer), so a large project never holds the editor.
 
 import { readFileSync, statSync } from "node:fs";
 import * as path from "node:path";
 import { MAP_MAX_NAMES_PER_FILE } from "../shared/constants.js";
+import { TimeSlicer } from "../shared/time-slice.js";
 import { walkProjectFiles } from "../workspace/shadow-copy.js";
 import { estimateTokens } from "./budget.js";
 import type { MapCache } from "./map-cache.js";
@@ -39,21 +41,25 @@ export interface ProjectMap {
   files: string[];
 }
 
-export function buildProjectMap(options: ProjectMapOptions): ProjectMap {
+export async function buildProjectMap(options: ProjectMapOptions): Promise<ProjectMap> {
+  const slicer = new TimeSlicer();
   const files: string[] = [];
   for (const rel of walkProjectFiles(options.root, options.ignoredDirs)) {
+    await slicer.pause();
     if (!options.isSecret(rel)) files.push(rel);
   }
-  const tags = readAllTags(options, files);
-  const ranked = rankFiles(files, tags, options.focus);
+  const tags = await readAllTags(options, files, slicer);
+  await slicer.pause();
+  const ranked = await rankFiles(files, tags, options.focus, slicer);
   const { text, shown } = renderMap(ranked, files.length, options.budgetTokens);
   return { text, tokens: estimateTokens(text), budgetTokens: options.budgetTokens, totalFiles: files.length, shown, tags, files };
 }
 
-function readAllTags(options: ProjectMapOptions, files: readonly string[]): Map<string, FileTags> {
+async function readAllTags(options: ProjectMapOptions, files: readonly string[], slicer: TimeSlicer): Promise<Map<string, FileTags>> {
   const tags = new Map<string, FileTags>();
   let parsed = 0;
   for (const rel of files) {
+    await slicer.pause();
     if (!options.reader.supports(rel) || parsed >= options.maxFiles) continue;
     parsed++;
     const abs = path.join(options.root, rel);

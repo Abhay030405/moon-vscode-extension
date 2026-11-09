@@ -17,6 +17,7 @@ import {
   RANK_NAME_WORD_WEIGHT,
   RANK_STOP_WORDS,
 } from "../shared/constants.js";
+import { TimeSlicer } from "../shared/time-slice.js";
 import type { Definition, FileTags } from "./tags.js";
 
 export interface RankFocus {
@@ -33,8 +34,16 @@ export interface RankedFile {
   defs: Definition[];
 }
 
-/** Ranks every file; `tags` holds the files that could be parsed. */
-export function rankFiles(allFiles: readonly string[], tags: ReadonlyMap<string, FileTags>, focus: RankFocus): RankedFile[] {
+/**
+ * Ranks every file; `tags` holds the files that could be parsed. Async only to pause in short
+ * slices: a project with thousands of files takes a few hundred ms in total.
+ */
+export async function rankFiles(
+  allFiles: readonly string[],
+  tags: ReadonlyMap<string, FileTags>,
+  focus: RankFocus,
+  slicer: TimeSlicer = new TimeSlicer(),
+): Promise<RankedFile[]> {
   const index = new Map(allFiles.map((rel, i) => [rel, i]));
   const n = allFiles.length;
   if (n === 0) return [];
@@ -42,6 +51,7 @@ export function rankFiles(allFiles: readonly string[], tags: ReadonlyMap<string,
   // Who defines each name.
   const definers = new Map<string, string[]>();
   for (const [rel, fileTags] of tags) {
+    await slicer.pause();
     for (const name of new Set(fileTags.defs.map((d) => d.name))) {
       const list = definers.get(name) ?? [];
       list.push(rel);
@@ -53,6 +63,7 @@ export function rankFiles(allFiles: readonly string[], tags: ReadonlyMap<string,
   const edges: { from: number; to: number; weight: number }[] = [];
   const usedBy = new Map<string, Set<string>>(); // "rel:name" -> files using it
   for (const [rel, fileTags] of tags) {
+    await slicer.pause();
     for (const [name, count] of Object.entries(fileTags.refs)) {
       const targets = (definers.get(name) ?? []).filter((t) => t !== rel);
       for (const target of targets) {
@@ -70,7 +81,11 @@ export function rankFiles(allFiles: readonly string[], tags: ReadonlyMap<string,
   // Most of the starting rank goes to files that match the request (or were @-named); the rest
   // is spread evenly, so files with no match can still rise through references.
   const identifiers = requestIdentifiers(focus.request);
-  const match = allFiles.map((rel) => matchStrength(rel, tags.get(rel), weights, identifiers) + (mentioned.has(rel) ? RANK_EXACT_NAME_WEIGHT : 0));
+  const match: number[] = [];
+  for (const rel of allFiles) {
+    await slicer.pause();
+    match.push(matchStrength(rel, tags.get(rel), weights, identifiers) + (mentioned.has(rel) ? RANK_EXACT_NAME_WEIGHT : 0));
+  }
   const matchSum = match.reduce((a, b) => a + b, 0);
   const focusShare = matchSum > 0 ? RANK_FOCUS_SHARE : 0;
   const personal = match.map((m) => (1 - focusShare) / n + (matchSum > 0 ? (focusShare * m) / matchSum : 0));
@@ -80,6 +95,7 @@ export function rankFiles(allFiles: readonly string[], tags: ReadonlyMap<string,
 
   let rank = [...personal];
   for (let round = 0; round < RANK_ITERATIONS; round++) {
+    await slicer.pause();
     const next = personal.map((p) => (1 - RANK_DAMPING) * p);
     let dangling = 0;
     rank.forEach((r, i) => {
