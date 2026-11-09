@@ -4,6 +4,7 @@
 import { randomBytes } from "node:crypto";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { deleteConversation, listConversations, readTranscript, searchConversations, type ConversationInfo } from "@moon/core";
 import type { ExtensionToPanel, Mention, MentionCandidate, PanelToExtension } from "@moon/webview-ui/protocol";
 import { AgentSession } from "../agent-run/agent-session.js";
 import type { MoonService } from "../agent-run/moon-service.js";
@@ -15,8 +16,11 @@ export const PANEL_VIEW_ID = "moon.panel";
 
 export class MoonPanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   private view: vscode.WebviewView | undefined;
-  /** The panel's current chat. A new chat id replaces it (and stops it if running). */
-  private chat: { id: string; agent: AgentSession | undefined } | undefined;
+  /**
+   * The panel's current chat. A new chat id replaces it (and stops it if running).
+   * `stopped`: Stop was pressed before its agent session existed.
+   */
+  private chat: { id: string; agent: AgentSession | undefined; stopped?: boolean } | undefined;
   /** Explorer dots on files waiting in the agent-mode review. */
   private readonly pending = new PendingChangesDecorations();
   /** Red lines, green notes and "Show diff" lenses in files under review. */
@@ -51,11 +55,13 @@ export class MoonPanelProvider implements vscode.WebviewViewProvider, vscode.Dis
         this.postState();
         return;
       case "new-chat":
-        this.chat?.agent?.stop();
+        this.chat?.agent?.dispose();
         this.chat = { id: message.chatId, agent: undefined };
         return;
       case "stop":
-        if (this.chat?.id === message.chatId) this.chat.agent?.stop();
+        if (this.chat?.id !== message.chatId) return;
+        if (this.chat.agent) void this.chat.agent.stop();
+        else this.stopBeforeStart(this.chat);
         return;
       case "open-session":
       case "open-link":
@@ -73,6 +79,18 @@ export class MoonPanelProvider implements vscode.WebviewViewProvider, vscode.Dis
       case "mention-search":
         await this.searchMentions(message.requestId, message.query);
         return;
+      case "history-list":
+        await this.listHistory(message.query);
+        return;
+      case "history-open":
+        await this.openPast(message.conversationId);
+        return;
+      case "history-continue":
+        await this.continueConversation(message.chatId, message.conversationId);
+        return;
+      case "history-delete":
+        await this.deletePast(message.conversationId);
+        return;
     }
     // The rest act on the current chat's agent session.
     const agent = this.chat?.id === message.chatId ? this.chat.agent : undefined;
@@ -80,6 +98,18 @@ export class MoonPanelProvider implements vscode.WebviewViewProvider, vscode.Dis
     switch (message.type) {
       case "command-decision":
         agent.commandDecision(message.requestId, message.decision);
+        return;
+      case "tool-decision":
+        agent.toolDecision(message.requestId, message.allow);
+        return;
+      case "recall-decision":
+        agent.recallDecision(message.requestId, message.allow);
+        return;
+      case "plan-decision":
+        agent.planDecision(message.requestId, message.approve, message.changes);
+        return;
+      case "question-answer":
+        agent.questionAnswer(message.requestId, message.answer);
         return;
       case "review-apply":
         agent.reviewApply(message.accepted);
@@ -94,6 +124,68 @@ export class MoonPanelProvider implements vscode.WebviewViewProvider, vscode.Dis
         await agent.undo();
         return;
     }
+  }
+
+  // ---- history (TrueForge sessions labelled with this project) ----
+
+  private async conversations(): Promise<ConversationInfo[]> {
+    const { client, config, project } = this.service.history();
+    return listConversations(client, project, config.memory.historyPageSize);
+  }
+
+  private async listHistory(query: string): Promise<void> {
+    try {
+      const items = searchConversations(await this.conversations(), query).map(({ id, title, summary, status, model, updatedAt }) => ({ id, title, summary, status, model, updatedAt }));
+      this.post({ type: "history", items });
+    } catch (err) {
+      this.post({ type: "history", items: [], error: (err as Error).message });
+    }
+  }
+
+  private async openPast(conversationId: string): Promise<void> {
+    try {
+      const past = (await this.conversations()).find((c) => c.id === conversationId);
+      if (!past) throw new Error("That conversation is gone.");
+      const items = await readTranscript(this.service.history().client, past);
+      this.post({ type: "past-conversation", conversationId, title: past.title, items });
+    } catch (err) {
+      this.post({ type: "past-conversation", conversationId, title: "", items: [], error: (err as Error).message });
+    }
+  }
+
+  /** Continues an earlier conversation as the panel's chat `chatId` (after Continue, or a reload). */
+  private async continueConversation(chatId: string, conversationId: string): Promise<void> {
+    this.chat?.agent?.dispose();
+    const chat: { id: string; agent: AgentSession | undefined; stopped?: boolean } = { id: chatId, agent: undefined };
+    this.chat = chat;
+    try {
+      const past = (await this.conversations()).find((c) => c.id === conversationId);
+      if (!past) throw new Error("That conversation is gone (deleted, or TrueForge's data was reset).");
+      const items = await readTranscript(this.service.history().client, past);
+      const agent = await AgentSession.create(chatId, this.sessionDeps(), past);
+      if (this.chat !== chat) return agent.dispose();
+      chat.agent = agent;
+      this.post({ type: "resumed", chatId, conversationId, title: past.title, items });
+      this.output.appendLine(`[memory] continuing "${past.title}" (${conversationId})`);
+    } catch (err) {
+      this.output.appendLine(`[memory] could not continue ${conversationId}: ${(err as Error).message}`);
+      void vscode.window.showWarningMessage(`Moon could not continue that chat: ${(err as Error).message}`);
+    }
+  }
+
+  private async deletePast(conversationId: string): Promise<void> {
+    try {
+      const past = (await this.conversations()).find((c) => c.id === conversationId);
+      if (past) await deleteConversation(this.service.history().client, past);
+      await this.service.records.delete(conversationId);
+    } catch (err) {
+      void vscode.window.showWarningMessage(`Moon could not delete that chat: ${(err as Error).message}`);
+    }
+    await this.listHistory("");
+  }
+
+  private sessionDeps() {
+    return { service: this.service, post: (message: ExtensionToPanel) => this.post(message), output: this.output, pending: this.pending, inEditor: this.inEditor };
   }
 
   /** Opens a project file the agent chose (only files inside the open folder). */
@@ -123,25 +215,27 @@ export class MoonPanelProvider implements vscode.WebviewViewProvider, vscode.Dis
 
   private async send(chatId: string, text: string, mentions: Mention[]): Promise<void> {
     if (this.chat?.id !== chatId) {
-      this.chat?.agent?.stop();
+      this.chat?.agent?.dispose();
       this.chat = { id: chatId, agent: undefined };
     }
     const chat = this.chat;
+    chat.stopped = false;
     try {
-      chat.agent ??= await AgentSession.create(chatId, {
-        service: this.service,
-        post: (message) => this.post(message),
-        output: this.output,
-        pending: this.pending,
-        inEditor: this.inEditor,
-      });
+      chat.agent ??= await AgentSession.create(chatId, this.sessionDeps());
     } catch (err) {
       this.post({ type: "event", chatId, event: { type: "done", status: "error", message: (err as Error).message } });
       return;
     }
-    // The user may have started a new chat while this one was being created.
+    // The user may have started a new chat, or pressed Stop, while this one was being created.
     if (this.chat !== chat) return;
+    if (chat.stopped) return;
     await chat.agent.send(text, mentions);
+  }
+
+  /** Stop before the agent session exists: nothing to cancel yet, just end the turn in the panel. */
+  private stopBeforeStart(chat: { id: string; stopped?: boolean }): void {
+    chat.stopped = true;
+    this.post({ type: "event", chatId: chat.id, event: { type: "done", status: "cancelled" } });
   }
 
   private postState(): void {
@@ -185,7 +279,7 @@ export class MoonPanelProvider implements vscode.WebviewViewProvider, vscode.Dis
   }
 
   dispose(): void {
-    this.chat?.agent?.stop();
+    this.chat?.agent?.dispose();
     for (const d of this.disposables) d.dispose();
   }
 }
