@@ -42,14 +42,14 @@ const readProject = (rel: string) => {
   }
 };
 
-beforeEach(() => {
+beforeEach(async () => {
   project = mkdtempSync(path.join(tmpdir(), "moon-project-"));
   write(project, "src/app.py", "import os\n\ndef a():\n    return 1\n\ndef b():\n    return 2\n");
   write(project, "src/old.py", "x = 1\n");
   write(project, ".env", "SECRET=1\n");
   write(project, ".git/HEAD", "ref\n");
   write(project, "node_modules/x/index.js", "1\n");
-  run = new AgentRun({
+  run = await AgentRun.create({
     projectRoot: project,
     config,
     // The editor has unsaved text for app.py: the copy must use it.
@@ -60,8 +60,8 @@ beforeEach(() => {
   run.tools.contextReported = true;
 });
 
-afterEach(() => {
-  run.dispose();
+afterEach(async () => {
+  await run.dispose();
   rmSync(project, { recursive: true, force: true });
 });
 
@@ -77,14 +77,14 @@ describe("hidden copy", () => {
     expect(listChanges(run.copy)).toEqual([]);
   });
 
-  it("is deleted on dispose", () => {
+  it("is deleted on dispose", async () => {
     const dir = run.copy.dir;
-    run.dispose();
+    await run.dispose();
     expect(existsSync(dir)).toBe(false);
   });
 
-  it("refuses projects over the file limit", () => {
-    expect(() => new AgentRun({ projectRoot: project, config: { ...config, agentRun: { ...config.agentRun, maxCopyFiles: 1 } }, applyApproved: async () => "" })).toThrow(/more than 1 files/);
+  it("refuses projects over the file limit", async () => {
+    await expect(AgentRun.create({ projectRoot: project, config: { ...config, agentRun: { ...config.agentRun, maxCopyFiles: 1 } }, applyApproved: async () => "" })).rejects.toThrow(/more than 1 files/);
   });
 });
 
