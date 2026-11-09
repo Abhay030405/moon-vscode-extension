@@ -18,6 +18,7 @@ import {
   expandMentions,
   loadMoonConfig,
   mapBudget,
+  parsePlan,
   rankFiles,
   readProjectRules,
   searchMentions,
@@ -94,8 +95,8 @@ describe("tags (tree-sitter)", () => {
 });
 
 describe("project map", () => {
-  it("lists files (not ignored folders or secrets), ranked for the request, inside the budget", () => {
-    const m = map("change the checkout command in the CLI");
+  it("lists files (not ignored folders or secrets), ranked for the request, inside the budget", async () => {
+    const m = await map("change the checkout command in the CLI");
     expect(m.files).not.toContain(".env");
     expect(m.files.some((f) => f.startsWith("node_modules"))).toBe(false);
     expect(m.shown[0]).toBe("src/shop/cli.py");
@@ -103,8 +104,8 @@ describe("project map", () => {
     expect(m.tokens).toBeLessThanOrEqual(m.budgetTokens);
   });
 
-  it("ranks a file that many others use above an unused one, and stops at the budget", () => {
-    const ranked = rankFiles(
+  it("ranks a file that many others use above an unused one, and stops at the budget", async () => {
+    const ranked = await rankFiles(
       ["a.py", "b.py", "c.py"],
       new Map<string, FileTags>([
         ["a.py", { defs: [{ name: "shared", kind: "function", line: 0 }], refs: {} }],
@@ -114,14 +115,14 @@ describe("project map", () => {
       { request: "", files: [] },
     );
     expect(ranked[0]!.rel).toBe("a.py");
-    const small = map("", 40);
+    const small = await map("", 40);
     expect(small.shown.length).toBeLessThan(small.totalFiles);
     expect(small.text).toContain("more files not shown");
   });
 
-  it("an exact name from the request or an @-named file wins", () => {
-    expect(map("why does load_cart fail?").shown[0]).toBe("src/shop/core.py");
-    expect(map("", 4000, ["web/app.ts"]).shown[0]).toBe("web/app.ts");
+  it("an exact name from the request or an @-named file wins", async () => {
+    expect((await map("why does load_cart fail?")).shown[0]).toBe("src/shop/core.py");
+    expect((await map("", 4000, ["web/app.ts"])).shown[0]).toBe("web/app.ts");
   });
 
   it("caches tags by size and modification time", () => {
@@ -159,8 +160,8 @@ describe("@-mentions", () => {
     }
   };
 
-  it("@file gives the whole file, or its outline when too large; @symbol gives one definition", () => {
-    const tags = map("").tags;
+  it("@file gives the whole file, or its outline when too large; @symbol gives one definition", async () => {
+    const tags = (await map("")).tags;
     const options = { readText: read, tags: (rel: string) => tags.get(rel), maxTokens: 1000, symbolMaxLines: 50 };
     const full = expandMentions([{ kind: "file", rel: "src/shop/core.py" }], options);
     expect(full.items[0]!.mode).toBe("full");
@@ -179,8 +180,8 @@ describe("@-mentions", () => {
     expect(expandMentions([{ kind: "file", rel: "nope.py" }], options).items[0]!.mode).toBe("missing");
   });
 
-  it("the picker finds files and names, best matches first", () => {
-    const m = map("");
+  it("the picker finds files and names, best matches first", async () => {
+    const m = await map("");
     const found = searchMentions("load", m.files, m.tags, 10);
     expect(found[0]).toMatchObject({ label: "load_cart", mention: { kind: "symbol", rel: "src/shop/core.py", line: 4 } });
     expect(searchMentions("cli", m.files, m.tags, 10).map((c) => c.detail)).toContain("src/shop/cli.py");
@@ -214,6 +215,10 @@ describe("report_context", () => {
     const ctx = new ToolContext(project, config);
     expect(await tool.run(ctx, { files: [{ path: "src/shop/cli.py", reason: "the command lives here" }] } as never)).toMatch(/Shown/);
     await expect(async () => tool.run(ctx, { files: [{ path: "src/ghost.py", reason: "x" }] } as never)).rejects.toThrow(/do not exist/);
+    // A file the agent will create is allowed when marked new (an empty project has no files yet)...
+    expect(await tool.run(ctx, { files: [{ path: "src/ghost.py", reason: "x", new: true }] } as never)).toMatch(/Shown/);
+    // ...but an existing file is not "new".
+    await expect(async () => tool.run(ctx, { files: [{ path: "src/shop/cli.py", reason: "x", new: true }] } as never)).rejects.toThrow(/already exist/);
     expect(ctx.contextReported).toBe(true);
 
     const events = new TurnEventMapper().map({
@@ -240,5 +245,32 @@ describe("report_context", () => {
     ctx.contextReported = true;
     expect(await edit.run(ctx, args)).toMatch(/Created src\/shop\/new.py/);
     rmSync(path.join(project, "src/shop/new.py"));
+  });
+});
+
+describe("propose_plan", () => {
+  it("edit_file is refused while a plan waits; the approved plan lets it through", async () => {
+    const edit = AGENT_TOOLS.find((t) => t.name === "edit_file")!;
+    const plan = AGENT_TOOLS.find((t) => t.name === "propose_plan")!;
+    const ctx = new ToolContext(project, config);
+    ctx.agentRun = {} as never;
+    ctx.contextReported = true;
+    ctx.planWaiting = true;
+    const args = { path: "src/shop/planned.py", content: "x = 1\n" } as never;
+    await expect(async () => edit.run(ctx, args)).rejects.toThrow(/waiting for the user/);
+    expect(await plan.run(ctx, { title: "t", steps: ["a"], files: [] } as never)).toMatch(/approved/);
+    expect(ctx.planWaiting).toBe(false);
+    expect(await edit.run(ctx, args)).toMatch(/Created/);
+    rmSync(path.join(project, "src/shop/planned.py"));
+  });
+
+  it("cleans the plan's arguments for the card", () => {
+    expect(parsePlan({ title: " CLI app ", steps: ["make it", "", 3], files: ["app.py"] })).toEqual({
+      title: "CLI app",
+      steps: ["make it"],
+      files: ["app.py"],
+      risks: [],
+    });
+    expect(parsePlan({}).title).toBe("Plan");
   });
 });

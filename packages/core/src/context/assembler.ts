@@ -115,7 +115,7 @@ export class ContextAssembler {
     this.reader ??= TagReader.create(this.paths);
     const reader = await this.reader;
     const secrets = new SecretGuard(this.config.safety);
-    const map = buildProjectMap({
+    const map = await buildProjectMap({
       root,
       reader,
       cache: new MapCache(this.cacheFile(root)),

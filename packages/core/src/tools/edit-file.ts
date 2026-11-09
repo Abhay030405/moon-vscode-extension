@@ -3,7 +3,7 @@
 // Refused until the agent called report_context in this run (the context card comes first).
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { REPORT_CONTEXT_TOOL } from "../shared/constants.js";
+import { PROPOSE_PLAN_TOOL, REPORT_CONTEXT_TOOL } from "../shared/constants.js";
 import * as path from "node:path";
 import { z } from "zod";
 import { lineCounts } from "../workspace/change-tracker.js";
@@ -32,6 +32,9 @@ export const editFileTool = defineTool({
     if (!ctx.agentRun) throw new ToolError("edit_file only works in agent mode.");
     if (!ctx.contextReported) {
       throw new ToolError(`Call ${REPORT_CONTEXT_TOOL} first: tell the user which files you chose and why, then edit.`);
+    }
+    if (ctx.planWaiting) {
+      throw new ToolError(`Your plan (${PROPOSE_PLAN_TOOL}) is waiting for the user. Edit only after it is approved.`);
     }
     if ((args.edits === undefined) === (args.content === undefined)) {
       throw new ToolError("Give either `edits` (existing file) or `content` (new file), not both.");
