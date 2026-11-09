@@ -41,3 +41,10 @@ export const FolderIcon = () => (
     <path d="M2 4.5a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z" />
   </svg>
 );
+
+export const HistoryIcon = () => (
+  <svg {...common}>
+    <path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9M2.5 2.5v2.5H5" />
+    <path d="M8 5v3l2 1.5" />
+  </svg>
+);

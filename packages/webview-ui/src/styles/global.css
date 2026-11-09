@@ -78,6 +78,13 @@
   --moon-composer-max-height: 200px;
   --moon-scrollbar-size: 10px;
   --moon-scrollbar-inset: 3px;
+  /* The message list follows a streaming answer only when the user is this close to the bottom. */
+  --moon-follow-slack: 48px;
+  --moon-plan-input-min-height: 64px;
+  --moon-z-floating: 1;
+  /* "Jump to latest": Moon's lavender, softened by the panel background (solid, not see-through). */
+  --moon-jump-bg: color-mix(in srgb, var(--moon-accent) 40%, var(--moon-bg));
+  --moon-jump-hover-bg: color-mix(in srgb, var(--moon-accent) 55%, var(--moon-bg));
   --moon-radius-pill: 999px;
   --moon-check-output-max-height: 160px;
   --moon-rejected-opacity: 0.5;
@@ -240,6 +247,23 @@ html {
   gap: var(--moon-space-xl);
 }
 
+/* Shown while the user has scrolled up during an answer; stays at the bottom of the list. */
+.moon-jump-latest {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--moon-z-floating);
+  align-self: center;
+  padding: var(--moon-space-s) var(--moon-space-l);
+  border: none;
+  border-radius: var(--moon-radius-l);
+  color: var(--moon-fg);
+  background: var(--moon-jump-bg);
+  font-size: var(--moon-font-size-small);
+}
+.moon-jump-latest:hover {
+  background: var(--moon-jump-hover-bg);
+}
+
 /* ---------- Welcome ---------- */
 
 .moon-welcome {
@@ -321,6 +345,27 @@ html {
 }
 .moon-notice.error {
   color: var(--moon-error);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--moon-space-m);
+}
+
+/* Model switch (automatic fallback, or back to the main model) */
+.moon-switch {
+  margin: var(--moon-space-s) 0;
+  padding: var(--moon-space-s) var(--moon-space-m);
+  border-left: var(--moon-quote-border-width) solid var(--moon-warning);
+  border-radius: var(--moon-radius-s);
+  background: var(--moon-surface);
+  font-size: var(--moon-font-size-small);
+  color: var(--moon-fg);
+}
+.moon-switch.back {
+  border-left-color: var(--moon-ok);
+}
+.moon-switch-model {
+  font-family: var(--moon-mono);
 }
 
 /*
@@ -588,6 +633,57 @@ html {
   display: flex;
   flex-wrap: wrap;
   gap: var(--moon-space-m);
+}
+
+/* Question card (the agent asks what the user means) */
+.moon-question-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--moon-space-s);
+}
+.moon-question-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--moon-space-m);
+  padding: var(--moon-space-m) var(--moon-space-l);
+  border: var(--moon-border-width) solid var(--moon-border);
+  border-radius: var(--moon-radius);
+  color: var(--moon-fg);
+  background: var(--moon-surface);
+  text-align: left;
+}
+.moon-question-option:hover:not(:disabled) {
+  border-color: var(--moon-accent);
+  background: var(--moon-list-hover-bg);
+}
+.moon-question-tag {
+  flex-shrink: 0;
+  padding: var(--moon-space-xs) var(--moon-space-s);
+  border-radius: var(--moon-radius-s);
+  color: var(--moon-accent-fg);
+  background: var(--moon-accent);
+  font-size: var(--moon-font-size-small);
+}
+.moon-question-own {
+  display: flex;
+  gap: var(--moon-space-m);
+}
+.moon-question-input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--moon-space-s) var(--moon-space-m);
+  border: var(--moon-border-width) solid var(--moon-border);
+  border-radius: var(--moon-radius-s);
+  color: var(--moon-input-fg);
+  background: var(--moon-surface);
+  font: inherit;
+}
+.moon-question-input:focus {
+  outline: var(--moon-border-width) solid var(--moon-focus);
+}
+.moon-question-input::placeholder {
+  color: var(--moon-placeholder);
 }
 
 /* After an apply */
@@ -866,4 +962,147 @@ html {
 }
 .moon-context-bar::-webkit-progress-value {
   background: var(--moon-accent);
+}
+
+/* ---------- History (/resume) ---------- */
+
+.moon-history {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--moon-space-l);
+  display: flex;
+  flex-direction: column;
+  gap: var(--moon-space-m);
+}
+.moon-history-head {
+  display: flex;
+  align-items: center;
+  gap: var(--moon-space-m);
+}
+.moon-history-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: var(--moon-weight-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.moon-history-search {
+  padding: var(--moon-space-s) var(--moon-space-m);
+  border: var(--moon-border-width) solid var(--moon-border);
+  border-radius: var(--moon-radius-s);
+  color: var(--moon-input-fg);
+  background: var(--moon-surface);
+  font: inherit;
+}
+.moon-history-search:focus {
+  outline: var(--moon-border-width) solid var(--moon-focus);
+}
+.moon-history-empty {
+  color: var(--moon-fg-muted);
+  font-size: var(--moon-font-size-small);
+}
+.moon-history-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--moon-space-m);
+}
+.moon-history-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--moon-space-s);
+  padding: var(--moon-space-m);
+  border: var(--moon-border-width) solid var(--moon-border);
+  border-radius: var(--moon-radius-l);
+}
+.moon-history-open {
+  display: flex;
+  flex-direction: column;
+  gap: var(--moon-space-xs);
+  text-align: left;
+  color: var(--moon-fg);
+  border-radius: var(--moon-radius-s);
+}
+.moon-history-open:hover {
+  background: var(--moon-list-hover-bg);
+}
+.moon-history-item-title {
+  font-weight: var(--moon-weight-strong);
+  overflow-wrap: anywhere;
+}
+.moon-history-tag {
+  margin-left: var(--moon-space-m);
+  padding: 0 var(--moon-space-s);
+  border-radius: var(--moon-radius-pill);
+  background: var(--moon-jump-bg);
+  font-size: var(--moon-font-size-small);
+  font-weight: normal;
+}
+.moon-history-summary {
+  font-size: var(--moon-font-size-small);
+  overflow-wrap: anywhere;
+}
+.moon-history-meta {
+  color: var(--moon-fg-muted);
+  font-size: var(--moon-font-size-small);
+}
+.moon-history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--moon-space-m);
+}
+.moon-history-past {
+  display: flex;
+  flex-direction: column;
+  gap: var(--moon-space-m);
+}
+.moon-history-msg.user {
+  padding: var(--moon-space-m) var(--moon-space-l);
+  border: var(--moon-border-width) solid var(--moon-border);
+  border-radius: var(--moon-radius-l);
+  background: var(--moon-surface);
+  color: var(--moon-input-fg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.moon-history-step {
+  color: var(--moon-fg-muted);
+  font-size: var(--moon-font-size-small);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Plan card (propose_plan) ---------- */
+
+.moon-plan-steps {
+  margin: 0;
+  padding-left: var(--moon-list-indent);
+  display: flex;
+  flex-direction: column;
+  gap: var(--moon-space-xs);
+}
+.moon-plan-files {
+  font-family: var(--moon-mono);
+  overflow-wrap: anywhere;
+}
+.moon-plan-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--moon-space-m);
+}
+.moon-plan-input {
+  min-height: var(--moon-plan-input-min-height);
+  padding: var(--moon-space-s) var(--moon-space-m);
+  border: var(--moon-border-width) solid var(--moon-border);
+  border-radius: var(--moon-radius-s);
+  color: var(--moon-input-fg);
+  background: var(--moon-surface);
+  font: inherit;
+  resize: vertical;
+}
+.moon-plan-input:focus {
+  outline: var(--moon-border-width) solid var(--moon-focus);
 }
