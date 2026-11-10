@@ -39,7 +39,11 @@ function requestFor(moment: Moment, marker: string): string {
   if (moment === "review") {
     return "This is a test of Stop. Create the new file notes/stop-test.txt containing the word hello (report it with report_context first), then call apply_changes.";
   }
-  return `This is a test of Stop. Do not look at any files and do not edit anything. Call run_command once with exactly this command: node -e "setTimeout(()=>{},120000)" ${marker}`;
+  return (
+    "I am testing that Moon's Stop button kills a running command. The command below only waits (it reads, writes and sends nothing); " +
+    "I will press Stop while it runs. Do not look at any files and do not edit anything. " +
+    `Call run_command once with exactly this command: node -e "setTimeout(()=>{},120000)" ${marker}`
+  );
 }
 
 interface MomentResult {
@@ -199,7 +203,7 @@ async function stopAt(live: Live, root: string, moment: Moment): Promise<MomentR
     commandWasRunning,
     chatUsable,
     pass,
-    note: reached ? undefined : "the run never reached this moment (stopped at the time limit)",
+    note: reached ? undefined : "the run never reached this moment (the agent did not get there, e.g. it declined the command, or the time limit passed)",
     sessionUrl,
   };
 }
