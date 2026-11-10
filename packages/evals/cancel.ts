@@ -11,12 +11,12 @@
 // - no process of the stopped command is left;
 // - the chat answers a new message (the panel is usable at once).
 //
-// Usage (from packages/evals): pnpm cancel [--only <moment>] [--trace]
+// Usage (from packages/evals): pnpm cancel [--model main|backup] [--only <moment>] [--trace]
 
 import { existsSync, readFileSync } from "node:fs";
 import * as path from "node:path";
 import { AgentRun, TrueForgeClient, modelRef, type AgentChat, type ApprovalAnswer, type MoonEvent } from "@moon/core";
-import { flag, freshCheckout, gitBaseline, gitStatus, loadConfig, processesWith, saveResults, startLive, type Live } from "./runner";
+import { evalModel, flag, freshCheckout, gitBaseline, gitStatus, loadConfig, processesWith, saveResults, startLive, type Live } from "./runner";
 
 type Moment = "thinking" | "scout" | "approval" | "command" | "review" | "trueforge-cancel";
 
@@ -90,7 +90,7 @@ async function main(): Promise<void> {
   } finally {
     await live.close();
   }
-  const meta = { date: new Date().toISOString(), model: modelRef(config.models.main), platform: process.platform };
+  const meta = { date: new Date().toISOString(), model: evalModel(config), platform: process.platform };
   const saved = saveResults("cancel", { ...meta, results }, report(meta, results));
   console.log(`\nReport: ${saved.md}\nData:   ${saved.json}`);
 }
@@ -100,7 +100,7 @@ async function stopAt(live: Live, root: string, moment: Moment): Promise<MomentR
   const marker = `moon-cancel-${moment}-${Date.now()}`;
   const run = await AgentRun.create({ projectRoot: root, config, applyApproved: async () => "Evaluation run: nothing was applied." });
   live.setRun(run);
-  const chat = live.newChat();
+  const chat = live.newChat(evalModel(config));
   const readText = (rel: string) => {
     try {
       return readFileSync(path.join(root, rel), "utf8");
