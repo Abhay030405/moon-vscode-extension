@@ -1,6 +1,9 @@
 // Command ids. They must match "contributes.commands" in packages/extension/package.json.
 export const CHECK_SETUP_COMMAND = "moon.checkSetup";
 
+/** Opens today's security log (approvals, blocked commands, redactions) and checks its hash chain. */
+export const SECURITY_LOG_COMMAND = "moon.showSecurityLog";
+
 /** Inline edit (Ctrl+I). */
 export const INLINE_COMMANDS = {
   /** Opens Moon's instruction box at the selection. Bound to Ctrl+I (optional) and Ctrl+Alt+M. */

@@ -1106,3 +1106,23 @@ html {
 .moon-plan-input:focus {
   outline: var(--moon-border-width) solid var(--moon-focus);
 }
+
+/* ---- Security notices (docs/security.md) ---- */
+.moon-card-taint,
+.moon-review-security {
+  margin: var(--moon-space-s) 0;
+  padding: var(--moon-space-s) var(--moon-space-m);
+  border-left: var(--moon-quote-border-width) solid var(--moon-warning);
+  color: var(--moon-warning);
+  font-size: var(--moon-font-size-small);
+}
+.moon-review-verified {
+  margin: var(--moon-space-s) 0;
+  font-size: var(--moon-font-size-small);
+}
+.moon-review-verified.ok {
+  color: var(--moon-ok);
+}
+.moon-review-verified.failed {
+  color: var(--moon-warning);
+}

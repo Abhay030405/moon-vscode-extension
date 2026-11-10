@@ -60,6 +60,13 @@ export interface ReviewView {
   files: ReviewFileView[];
   /** Commands the agent ran in its copy (test results). */
   commands: CommandResultView[];
+  /** Security warnings: secrets or hidden characters in what would be written. */
+  warnings: { rel: string; text: string }[];
+  /**
+   * Did the agent check its work? "passed"/"failed": the last command ran after the last edit
+   * and exited 0 / not 0; "stale": edits came after the last command; "none": nothing ran.
+   */
+  verified: { state: "passed" | "failed" | "stale" | "none"; command?: string; exitCode?: number | null };
 }
 
 /** The agent wants to run a command; TrueForge is waiting for the user's answer. */
@@ -69,6 +76,8 @@ export interface CommandApprovalView {
   cwd: string | undefined;
   /** Why the command looks risky (empty when nothing stands out). */
   risks: string[];
+  /** Set when the agent read outside content in this task (web, GitHub, a past chat): "Always" is off. */
+  tainted?: string;
 }
 
 export type CommandDecision = "once" | "always" | "deny";
@@ -83,6 +92,8 @@ export interface ToolApprovalView {
   /** The arguments as pretty JSON, cut to ui.approvalArgsMaxChars. */
   args: string;
   truncated: boolean;
+  /** Set when the agent read outside content in this task: the card says so. */
+  tainted?: string;
 }
 
 /** The agent asked a question (TrueForge's ask_user_question); the turn waits for the answer. */

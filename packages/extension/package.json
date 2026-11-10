@@ -22,11 +22,22 @@
   "activationEvents": [
     "onStartupFinished"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In Restricted Mode Moon's agent can read the project but runs no commands and applies no changes."
+    }
+  },
   "contributes": {
     "commands": [
       {
         "command": "moon.checkSetup",
         "title": "Check setup",
+        "category": "Moon"
+      },
+      {
+        "command": "moon.showSecurityLog",
+        "title": "Show security log",
         "category": "Moon"
       },
       {

@@ -43,6 +43,10 @@ import {
   type SessionKind,
   type MoonConfig,
   type RunningMcpServer,
+  AuditLog,
+  verifyAuditFile,
+  SECURITY_LOG_DIR,
+  type AuditEntry,
 } from "@moon/core";
 import type { PanelSettings } from "@moon/webview-ui/protocol";
 import { VsCodeEditorBridge } from "../editor-bridge/editor-bridge.js";
@@ -80,12 +84,46 @@ export class MoonService implements vscode.Disposable {
   private settingsWatch: ReturnType<typeof setInterval> | undefined;
   /** Each conversation's work record, in Moon's storage folder. */
   readonly records: WorkRecordStore;
+  /** Moon's security log (made on first use; off when security.auditLog.enabled is false). */
+  private auditLog: AuditLog | null | undefined;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly output: vscode.OutputChannel,
   ) {
     this.records = new WorkRecordStore(path.join(context.globalStorageUri.fsPath, WORK_RECORDS_DIR));
+  }
+
+  /** Moon's settings as they are now (config/moon.json). */
+  currentConfig(): MoonConfig {
+    return loadMoonConfig(resolveConfigPath(this.context));
+  }
+
+  /** Writes one line to the security log (never file contents or secrets). */
+  audit(entry: AuditEntry): void {
+    try {
+      if (this.auditLog === undefined) {
+        const { auditLog } = loadMoonConfig(resolveConfigPath(this.context)).security;
+        this.auditLog = auditLog.enabled ? new AuditLog(path.join(this.context.globalStorageUri.fsPath, SECURITY_LOG_DIR), auditLog.retentionDays) : null;
+      }
+      this.auditLog?.write(entry);
+    } catch (err) {
+      this.output.appendLine(`[security] could not write the security log: ${(err as Error).message}`);
+    }
+  }
+
+  /** Opens today's security log and says whether its hash chain is intact. */
+  async showSecurityLog(): Promise<void> {
+    this.audit({ kind: "log-opened", detail: "the user opened the security log" });
+    const file = this.auditLog?.currentFile;
+    if (!file) {
+      void vscode.window.showInformationMessage("Moon's security log is off (security.auditLog.enabled in config).");
+      return;
+    }
+    const broken = verifyAuditFile(file);
+    await vscode.window.showTextDocument(vscode.Uri.file(file), { preview: true });
+    if (broken === undefined) void vscode.window.showInformationMessage("Moon security log: the chain of entries is intact.");
+    else void vscode.window.showWarningMessage(`Moon security log: entry ${broken} was changed or removed after it was written.`);
   }
 
   /** TrueForge, the config and this project's key, for the chat history. */
@@ -176,7 +214,7 @@ export class MoonService implements vscode.Disposable {
     // Create-or-update by name: cheap, and done again before every turn (beforeTurn below).
     const register = async () => {
       for (const name of [names.editor, names.agent]) {
-        await registerMcpServer(client, { name, url: server.mcp.urls[name]!, description: MOON_MCP_DESCRIPTION });
+        await registerMcpServer(client, { name, url: server.mcp.urls[name]!, description: MOON_MCP_DESCRIPTION, headers: server.mcp.authHeaders });
       }
     };
     await register();
@@ -272,15 +310,25 @@ export class MoonService implements vscode.Disposable {
     await this.server?.mcp.close();
     const tools = new ToolContext(root, config);
     tools.editor = new VsCodeEditorBridge(root);
+    tools.audit = (entry) => this.audit(entry);
     const names = endpointNames(config.mcp, projectScope(root));
     const endpoints = [
       { name: names.editor, path: names.editorPath, tools: EDITOR_TOOLS, context: () => tools },
       { name: names.agent, path: names.agentPath, tools: AGENT_TOOLS, context: () => this.activeRun?.tools },
     ];
-    const mcp = await startMcpServer(config.mcp, endpoints, (call) => {
-      const status = call.ok ? "ok" : `refused: ${call.error}`;
-      this.output.appendLine(`[tool] ${call.summary} (${call.durationMs} ms) ${status}`);
-    });
+    const mcp = await startMcpServer(
+      config.mcp,
+      endpoints,
+      (call) => {
+        const status = call.ok ? "ok" : `refused: ${call.error}`;
+        this.output.appendLine(`[tool] ${call.summary} (${call.durationMs} ms) ${status}`);
+      },
+      // Something other than TrueForge tried to call Moon's tools (no token, or from a web page).
+      (reason) => {
+        this.output.appendLine(`[security] MCP server refused a ${reason}`);
+        this.audit({ kind: "mcp-auth", detail: `refused a ${reason}` });
+      },
+    );
     this.output.appendLine(`[${new Date().toLocaleTimeString()}] Moon MCP server for ${root} at ${Object.values(mcp.urls).join(", ")}`);
     this.server = { root, mcp, tools };
     return this.server;
