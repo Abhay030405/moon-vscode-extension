@@ -7,7 +7,7 @@ calls a search service itself and never sees the key.
 ## 1. Set the provider in TrueForge
 
 1. Get an API key from Parallel (https://parallel.ai), the search provider TrueForge supports.
-2. Open TrueForge (`npx @truefoundry/trueforge@latest`, then its web UI), go to
+2. Open TrueForge (`scripts/start-trueforge`, which runs the pinned version, then its web UI), go to
    **Settings → Web search**, choose **Parallel** and paste the key there.
 
 The key lives only in TrueForge's own settings. Do not put it in `.env`, in `config/` or

@@ -288,6 +288,19 @@ These are separate from the `/update` notes above. This is the memory of *what w
 
 ---
 
+### 5.3 Security layer (OWASP LLM Top 10 2026, built 10-11 Nov)
+
+**Decision:** security is deterministic code around the model, never a model's judgement. The full design is in `docs/security.md`. The decisions behind it:
+- **Token on the MCP server, not just the localhost binding.** Approval happens inside TrueForge, before it calls a tool. Without a token, any local program could call `run_command` directly while a run is active. Header auth was probed live on TrueForge 0.184: the header arrives on every request.
+- **An approval ledger instead of trusting the call.** The extension records each Allow (tool + canonical arguments, single use, short expiry), and `run_command` checks it. That is OWASP's complete mediation; `apply_changes` already worked this way through the review.
+- **Hidden characters are shown, not stripped.** Stripping would silently change files the agent edits. Showing them keeps edits byte-true and makes smuggling visible. Edits that would write a marker back are refused.
+- **Redaction applies to the model's input only.** The user's files are never changed. The review screen still warns when an agent change *adds* a secret.
+- **Network blocked for commands by default** (the user chose this, 10 Nov). It is a proxy speed bump, labelled as such; the fixed tasks need no network.
+- **Taint is per task.** Reading web, GitHub or a past chat blocks network commands and "Always" until the next request. This removes one leg of the lethal trifecta exactly when another is present.
+- **No ML classifiers.** They would need a model call that Moon may not make (AGENTS.md section 1). Pattern + entropy detection is the stated limit.
+- **TrueForge pinned to 0.184.2** (the user approved changing AGENTS.md's `@latest`, 10 Nov).
+- **Not built:** hashing third-party tool descriptions (TrueForge doesn't expose them), an OS sandbox for commands on Windows.
+
 ## 6. Resilience and models (B3, Task C)
 
 Task C: the organisers break the model (unreachable address or invalid key) and repeat Task A. The editor must stay responsive, the user sees a clear message or a second model takes over automatically, and `git status` shows no files changed. Aim: **10/10 = automatic switch to a second model with no user action.**

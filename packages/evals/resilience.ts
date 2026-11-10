@@ -86,7 +86,7 @@ async function main(): Promise<void> {
   const tools = new ToolContext(checkout.root, config);
   const names = endpointNames(config.mcp);
   const mcp = await startMcpServer(config.mcp, [{ name: names.editor, path: names.editorPath, tools: EDITOR_TOOLS, context: () => tools }]);
-  await registerMcpServer(client, { name: names.editor, url: mcp.urls[names.editor]!, description: MOON_MCP_DESCRIPTION });
+  await registerMcpServer(client, { name: names.editor, url: mcp.urls[names.editor]!, description: MOON_MCP_DESCRIPTION, headers: mcp.authHeaders });
 
   const results: ScenarioResult[] = [];
   try {
