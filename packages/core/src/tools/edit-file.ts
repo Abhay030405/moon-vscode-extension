@@ -41,11 +41,14 @@ export const editFileTool = defineTool({
     }
     const { abs, rel } = ctx.resolveReadable(args.path);
     if (!rel) throw new ToolError("Give a file path, not the project folder.");
+    // Never write back a marker Moon put in a tool result (a redacted secret, a shown hidden character).
+    for (const text of [args.content ?? "", ...(args.edits ?? []).flatMap((e) => [e.old_text, e.new_text])]) ctx.checkWritable(text);
 
     if (args.content !== undefined) {
       if (existsSync(abs)) throw new ToolError(`"${rel}" already exists. Use \`edits\` to change it.`);
       mkdirSync(path.dirname(abs), { recursive: true });
       writeFileSync(abs, args.content);
+      ctx.agentRun.onEdit?.();
       const { added } = lineCounts(null, args.content);
       return `Created ${rel} (${added} lines) in the working copy.`;
     }
@@ -60,6 +63,7 @@ export const editFileTool = defineTool({
     }
     if (after === before) throw new ToolError("These edits change nothing.");
     writeFileSync(abs, after);
+    ctx.agentRun.onEdit?.();
     const { added, removed } = lineCounts(before, after);
     return `Edited ${rel} in the working copy (+${added} -${removed} lines).`;
   },

@@ -7,11 +7,12 @@ import type { MoonConfig } from "../shared/config.js";
 import { SecretGuard } from "../safety/secret-guard.js";
 import { ToolContext, type EditorBridge } from "../tools/context.js";
 import { buildReview, type FileReview } from "./review.js";
+import { ApprovalLedger } from "../safety/approval-ledger.js";
 import { ShadowCopy } from "./shadow-copy.js";
 
 export interface AgentRunOptions {
   projectRoot: string;
-  config: Pick<MoonConfig, "tools" | "safety" | "agentRun">;
+  config: Pick<MoonConfig, "tools" | "safety" | "agentRun" | "security">;
   editor?: EditorBridge;
   /** Called when the user approved apply_changes; returns the report for the agent. */
   applyApproved(run: AgentRun, summary: string): Promise<string>;
@@ -23,6 +24,10 @@ export class AgentRun {
   readonly tools: ToolContext;
   /** Every command the agent ran, in order (test results for the review screen). */
   readonly commands: RunResult[] = [];
+  /** The user's approvals for this run (run_command checks it before running anything). */
+  readonly approvals: ApprovalLedger;
+  /** When the agent last changed a file in the copy (ms); the review shows if tests ran after it. */
+  lastEditAt = 0;
   private readonly abort = new AbortController();
 
   /** Makes the hidden copy (async, so the editor never waits on it) and the run around it. */
@@ -45,8 +50,13 @@ export class AgentRun {
   ) {
     this.tools = new ToolContext(this.copy.dir, options.config);
     this.tools.editor = options.editor;
+    this.approvals = new ApprovalLedger(options.config.security.approvalTtlMs);
     this.tools.agentRun = {
       copy: this.copy,
+      approvals: this.approvals,
+      onEdit: () => {
+        this.lastEditAt = Date.now();
+      },
       signal: this.abort.signal,
       onCommand: (result) => {
         this.commands.push(result);

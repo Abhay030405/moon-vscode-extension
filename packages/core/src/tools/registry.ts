@@ -18,6 +18,7 @@ import { readFileTool } from "./read-file.js";
 import { runCommandTool } from "./run-command.js";
 import { searchTextTool } from "./search-text.js";
 import { stepText, type MoonTool } from "./tool.js";
+import { filterForModel } from "../safety/output-filter.js";
 import { reportContextTool } from "./report-context.js";
 
 /** Looking around: never changes anything. */
@@ -81,7 +82,16 @@ export function registerMoonTools(
         try {
           const ctx = context();
           if (!ctx) throw new ToolError("No agent run is active, so this tool cannot be used right now.");
-          const text = await tool.run(ctx, args as never, extra.signal);
+          const raw = await tool.run(ctx, args as never, extra.signal);
+          // Secrets redacted, hidden characters shown, control codes removed (safety/output-filter.ts).
+          const { text, report } = filterForModel(raw, ctx.security.hiddenCharWarnThreshold);
+          if (report.redactions.length > 0 || report.hiddenChars > 0) {
+            ctx.audit?.({
+              kind: "filtered",
+              detail: `${tool.name}: ${report.redactions.length} secret(s) redacted, ${report.hiddenChars} hidden character(s) shown`,
+              kinds: [...new Set(report.redactions.map((r) => r.kind))].join(","),
+            });
+          }
           onCall?.({ tool: tool.name, summary, ok: true, durationMs: Date.now() - started });
           return { content: [{ type: "text" as const, text }] };
         } catch (err) {

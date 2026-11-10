@@ -7,6 +7,8 @@ export interface McpRegistration {
   name: string;
   url: string;
   description: string;
+  /** Headers TrueForge sends on every request (Moon's per-start token). */
+  headers?: Record<string, string>;
 }
 
 export async function registerMcpServer(client: TrueForgeClient, registration: McpRegistration): Promise<void> {
@@ -16,6 +18,7 @@ export async function registerMcpServer(client: TrueForgeClient, registration: M
       name: registration.name,
       url: registration.url,
       description: registration.description,
+      ...(registration.headers ? { auth: { type: "header" as const, headers: registration.headers } } : {}),
     },
   });
 }

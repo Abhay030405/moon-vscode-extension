@@ -6,6 +6,7 @@
 //   instructions ("memory poisoning"); what it returns is marked as untrusted data.
 
 import { z } from "zod";
+import { checkSummary } from "../safety/memory-write.js";
 import { wrapUntrusted } from "../safety/untrusted-text.js";
 import { ToolError } from "./context.js";
 import { defineTool } from "./tool.js";
@@ -22,7 +23,13 @@ export const saveSummaryTool = defineTool({
   readOnly: true,
   async run(ctx, args) {
     if (!ctx.memory) throw new ToolError("save_summary only works in agent mode.");
-    await ctx.memory.saveSummary(args.summary);
+    // Memory writes are privileged: a summary that reads like an instruction is not saved.
+    const check = checkSummary(args.summary, ctx.security.summaryMaxChars);
+    if (!check.ok) {
+      ctx.audit?.({ kind: "blocked", detail: `save_summary refused: ${check.reason}`, tool: "save_summary" });
+      throw new ToolError(`Summary not saved: ${check.reason}. Write two plain lines: what was asked, and what you did.`);
+    }
+    await ctx.memory.saveSummary(check.text);
     return "Saved.";
   },
   describe: () => ({ action: "Saved summary", target: "" }),
@@ -42,7 +49,8 @@ export const listPastSessionsTool = defineTool({
   readOnly: true,
   async run(ctx, args) {
     if (!ctx.memory) throw new ToolError("list_past_sessions only works in agent mode.");
-    return ctx.capOutput(await ctx.memory.listPast(args.query, args.limit ?? 10));
+    // Titles and summaries were written by earlier agents: data, not instructions.
+    return ctx.capOutput(wrapUntrusted("past sessions list", await ctx.memory.listPast(args.query, args.limit ?? 10)));
   },
   describe: (args) => ({ action: "Listed past sessions", target: args.query ?? "" }),
 });

@@ -192,7 +192,7 @@ describe("MCP server", () => {
     const server = await startMcpServer({ ...config.mcp, port: 0 }, endpoints(), (e) => events.push(e));
     const client = new Client({ name: "moon-test", version: "0.0.0" });
     try {
-      await client.connect(new StreamableHTTPClientTransport(new URL(server.urls[config.mcp.serverName]!)));
+      await client.connect(new StreamableHTTPClientTransport(new URL(server.urls[config.mcp.serverName]!), { requestInit: { headers: server.authHeaders } }));
       const { tools } = await client.listTools();
       expect(tools.map((t) => t.name).sort()).toEqual(EDITOR_TOOLS.map((t) => t.name).sort());
       // Only propose_edit is not read-only; none is destructive (so TrueForge's "@destructive" never matches).
@@ -221,7 +221,7 @@ describe("MCP server", () => {
     const server = await startMcpServer({ ...config.mcp, port: 0 }, endpoints(undefined));
     const client = new Client({ name: "moon-test", version: "0.0.0" });
     try {
-      await client.connect(new StreamableHTTPClientTransport(new URL(server.urls[endpointNames(config.mcp).agent]!)));
+      await client.connect(new StreamableHTTPClientTransport(new URL(server.urls[endpointNames(config.mcp).agent]!), { requestInit: { headers: server.authHeaders } }));
       const { tools } = await client.listTools();
       expect(tools.map((t) => t.name).sort()).toEqual(AGENT_TOOLS.map((t) => t.name).sort());
       const refused = await client.callTool({ name: "read_file", arguments: { path: "src/app.py" } });
@@ -256,7 +256,7 @@ describe("MCP server", () => {
     const server = await startMcpServer({ ...config.mcp, port: 0 }, [{ name: "t", path: config.mcp.path, tools: [waitTool], context: () => ctx }]);
     const client = new Client({ name: "moon-test", version: "0.0.0" });
     try {
-      await client.connect(new StreamableHTTPClientTransport(new URL(server.urls.t!)));
+      await client.connect(new StreamableHTTPClientTransport(new URL(server.urls.t!), { requestInit: { headers: server.authHeaders } }));
       const stop = new AbortController();
       const call = client.callTool({ name: "wait_for_stop", arguments: {} }, undefined, { signal: stop.signal }).catch(() => "cancelled");
       await isRunning;
@@ -267,6 +267,23 @@ describe("MCP server", () => {
       await expect.poll(() => server.runningCalls).toBe(0);
     } finally {
       await client.close();
+      await server.close();
+    }
+  });
+
+  it("refuses calls without Moon's token (401) and any browser request (403), and says so", async () => {
+    const rejected: string[] = [];
+    const server = await startMcpServer({ ...config.mcp, port: 0 }, endpoints(), undefined, (r) => rejected.push(r));
+    const url = server.urls[config.mcp.serverName]!;
+    const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    const headers = { "content-type": "application/json", accept: "application/json, text/event-stream" };
+    try {
+      expect((await fetch(url, { method: "POST", headers, body })).status).toBe(401);
+      expect((await fetch(url, { method: "POST", headers: { ...headers, authorization: "Bearer wrong" }, body })).status).toBe(401);
+      expect((await fetch(url, { method: "POST", headers: { ...headers, ...server.authHeaders, origin: "https://evil.example" }, body })).status).toBe(403);
+      expect((await fetch(url, { method: "POST", headers: { ...headers, ...server.authHeaders }, body })).status).toBe(200);
+      expect(rejected).toEqual(["request without Moon's token", "request with a wrong token", "request from a browser page (Origin https://evil.example)"]);
+    } finally {
       await server.close();
     }
   });

@@ -1,3 +1,4 @@
+// moon-secret-scan: fake secrets on purpose (a made-up token to prove commands never see it).
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
@@ -113,15 +114,47 @@ describe("agent tools in the copy", () => {
     await expect(async () => tool("edit_file", { path: "../escape.py", content: "x" })).rejects.toThrow();
   });
 
+  /** run_command as the user approved it (the extension records the approval in the run's ledger). */
+  const approvedCommand = (command: string) => {
+    run.approvals.grant("run_command", { command });
+    return tool("run_command", { command });
+  };
+
+  it("run_command refuses a command the user did not approve, and an approval works only once", async () => {
+    const command = `${node} -e "console.log(1)"`;
+    await expect(tool("run_command", { command })).rejects.toThrow(/not approved by the user/);
+    await approvedCommand(command);
+    await expect(tool("run_command", { command })).rejects.toThrow(/not approved by the user/);
+    expect(run.commands).toHaveLength(1);
+  });
+
+  it("run_command never passes secret-looking or unlisted variables, and blocks the network", async () => {
+    process.env.MOON_TEST_GITHUB_TOKEN = "ghp_should_never_show";
+    process.env.MOON_TEST_RANDOM = "not-allowed";
+    try {
+      const out = await approvedCommand(`${node} -e "console.log(JSON.stringify(process.env))"`);
+      expect(out).not.toContain("ghp_should_never_show");
+      expect(out).not.toContain("not-allowed");
+      expect(out).toContain("127.0.0.1:9");
+    } finally {
+      delete process.env.MOON_TEST_GITHUB_TOKEN;
+      delete process.env.MOON_TEST_RANDOM;
+    }
+  });
+
+  it("run_command blocks a policy-blocked command even when approved", async () => {
+    await expect(approvedCommand("git push origin main")).rejects.toThrow(/Moon blocked this command: pushes to a remote/);
+  });
+
   it("run_command runs in the copy with the configured environment", async () => {
-    const out = await tool("run_command", { command: `${node} -e "console.log(process.cwd()); console.log(process.env.MOON_T)"` });
+    const out = await approvedCommand(`${node} -e "console.log(process.cwd()); console.log(process.env.MOON_T)"`);
     expect(out).toContain("Exit code 0");
     expect(out.toLowerCase()).toContain(path.resolve(run.copy.dir).toLowerCase());
     expect(run.commands).toHaveLength(1);
   });
 
   it("run_command warns when the output points at the real project instead of the copy", async () => {
-    const out = await tool("run_command", { command: `${node} -e "console.log(${JSON.stringify(project.replaceAll("\\", "/"))})"` });
+    const out = await approvedCommand(`${node} -e "console.log(${JSON.stringify(project.replaceAll("\\", "/"))})"`);
     expect(out).toContain("may have run the original code");
   });
 });

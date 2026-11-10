@@ -8,6 +8,10 @@ import { SecretGuard } from "../safety/secret-guard.js";
 import type { MoonConfig } from "../shared/config.js";
 import { BINARY_SNIFF_BYTES } from "../shared/constants.js";
 import type { RunResult } from "../process/runner.js";
+import type { ApprovalLedger } from "../safety/approval-ledger.js";
+import type { AuditEntry } from "../safety/audit-log.js";
+import { hasRedactionMarker } from "../safety/secret-scan.js";
+import { hasRevealMarker } from "../safety/unicode.js";
 import type { ShadowCopy } from "../workspace/shadow-copy.js";
 
 export class ToolError extends Error {
@@ -38,6 +42,13 @@ export interface EditorBridge {
 export interface AgentRunHooks {
   /** The hidden copy the agent works in (also this context's root). */
   copy: ShadowCopy;
+  /**
+   * The user's approvals of tool calls that change things (recorded by the extension when the
+   * user clicks Allow). run_command runs only with a matching approval (complete mediation).
+   */
+  approvals: ApprovalLedger;
+  /** Called after every change to the copy (edit_file). */
+  onEdit?(): void;
   /** Aborted when the user presses Stop: kills a running command. */
   signal: AbortSignal;
   /** Every finished command, for the review screen's test results. */
@@ -87,6 +98,9 @@ export class ToolContext {
   /** Set only on agent mode's context: this conversation's memory. */
   memory: MemoryHooks | undefined;
   readonly runSettings: MoonConfig["agentRun"];
+  readonly security: MoonConfig["security"];
+  /** Moon's security log, when the extension keeps one (never given file contents or secrets). */
+  audit: ((entry: AuditEntry) => void) | undefined;
   /**
    * True once the agent called report_context in this run. edit_file waits for it, so the user
    * always sees which files the agent chose (and why) before the first change.
@@ -95,7 +109,8 @@ export class ToolContext {
   /** True while a plan from propose_plan waits for the user: edit_file is refused until it is approved. */
   planWaiting = false;
 
-  constructor(root: string, config: Pick<MoonConfig, "tools" | "safety" | "agentRun">) {
+  constructor(root: string, config: Pick<MoonConfig, "tools" | "safety" | "agentRun" | "security">) {
+    this.security = config.security;
     this.paths = new PathGuard(root);
     this.secrets = new SecretGuard(config.safety);
     this.limits = config.tools;
@@ -175,6 +190,19 @@ export class ToolContext {
       return !looksBinary(abs);
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Refuses text an edit would write when it carries a marker Moon put in a tool result (a
+   * redacted secret or a ⟦U+...⟧ hidden character): writing it back would destroy the real value.
+   */
+  checkWritable(text: string): void {
+    if (hasRedactionMarker(text) || hasRevealMarker(text)) {
+      throw new ToolError(
+        "This edit contains a marker Moon put in place of a secret («secret redacted: ...») or a hidden character (⟦U+...⟧). " +
+          "Leave those lines as they are: change the code around them, or ask the user to edit them.",
+      );
     }
   }
 

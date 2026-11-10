@@ -28,8 +28,9 @@ function fakeClient(has: { webSearch: boolean; servers: string[] }) {
   return { client, calls };
 }
 
-const off = { webSearch: false, github: { enabled: false, serverName: "github" } };
-const on = { webSearch: true, github: { enabled: true, serverName: "github" } };
+const tools = ["get_issue", "search_code", "create_pull_request"];
+const off = { webSearch: false, github: { enabled: false, serverName: "github", enableTools: tools } };
+const on = { webSearch: true, github: { enabled: true, serverName: "github", enableTools: tools } };
 const spec = { model: { name: "p/m" }, mcpServers: [{ name: "moon-agent" }], config: { iterationLimit: 60 } } as never;
 
 describe("extras (web search, GitHub)", () => {
@@ -40,7 +41,7 @@ describe("extras (web search, GitHub)", () => {
     expect(withExtras(spec, check, off)).toBe(spec);
   });
 
-  it("adds web search and the GitHub server (writes need approval) when TrueForge has them", async () => {
+  it("adds web search and the GitHub server (only the listed tools; writes need approval, also by name) when TrueForge has them", async () => {
     const { client } = fakeClient({ webSearch: true, servers: ["github"] });
     const check = await checkExtras(client, on);
     expect(check).toEqual({ webSearch: true, github: true, problems: [] });
@@ -48,7 +49,7 @@ describe("extras (web search, GitHub)", () => {
     expect(result.config).toEqual({ iterationLimit: 60, webSearch: { enabled: true } });
     expect(result.mcpServers).toEqual([
       { name: "moon-agent" },
-      { name: "github", enableTools: ["@all"], requireApprovalForTools: ["@write", "@destructive"] },
+      { name: "github", enableTools: tools, requireApprovalForTools: ["@write", "@destructive", "create_pull_request"] },
     ]);
   });
 
