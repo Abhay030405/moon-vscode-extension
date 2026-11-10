@@ -17,7 +17,16 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import {
   AgentRun,
-  commandRisks,
+  AGENT_TOOLS,
+  EDITOR_TOOLS,
+  checkCommand,
+  containsSecret,
+  hasHidden,
+  revealHidden,
+  RunBudget,
+  TRUEFORGE_INTERNAL_TOOLS,
+  UNTRUSTED_SOURCE_TOOLS,
+  type AuditEntry,
   expandMentions,
   finalText,
   hunkWithContext,
@@ -54,6 +63,8 @@ const PROPOSE_PLAN_TOOL = "propose_plan";
 
 export interface AgentSessionDeps {
   service: MoonService;
+  /** Moon's security log (approvals, blocks, taint, budget stops). */
+  audit(entry: AuditEntry): void;
   post(message: ExtensionToPanel): void;
   output: vscode.OutputChannel;
   pending: PendingChangesDecorations;
@@ -67,6 +78,25 @@ type ReviewChoice = { accepted: HunkDecisions } | "discard" | undefined;
 interface AppliedFile {
   before: string | null;
   after: string | null;
+}
+
+/** Agent mode in a folder VS Code marks as not trusted (Restricted Mode): look, but change nothing. */
+const RESTRICTED_MODE_REASON =
+  "This folder is not trusted in VS Code (Restricted Mode), so Moon runs no commands and applies no changes here. " +
+  "Tell the user they can trust the folder (Manage Workspace Trust) if they want you to continue.";
+
+/** Names of Moon's own tools (anything else the agent calls comes from TrueForge or a third-party server). */
+const MOON_TOOL_NAMES = new Set([...AGENT_TOOLS, ...EDITOR_TOOLS].map((t) => t.name));
+
+/** Secrets and hidden characters in the text a review would write (shown on the review screen). */
+function reviewWarnings(files: readonly FileReview[]): { rel: string; text: string }[] {
+  const warnings: { rel: string; text: string }[] = [];
+  for (const file of files) {
+    const added = file.hunks.flatMap((h) => h.newLines).join("\n");
+    if (containsSecret(added)) warnings.push({ rel: file.rel, text: "adds what looks like a secret (a key, token or password)" });
+    if (hasHidden(added)) warnings.push({ rel: file.rel, text: "adds hidden characters (shown as ⟦U+...⟧ in the diff): they can make code look different from what it does" });
+  }
+  return warnings;
 }
 
 export class AgentSession implements vscode.Disposable {
@@ -91,6 +121,16 @@ export class AgentSession implements vscode.Disposable {
   /** Told to the agent with the next message (e.g. the user undid the last apply). */
   private notes: string[] = [];
   private stopped = false;
+  /**
+   * Set (to where it came from) once this task took in content from outside the project: a web
+   * page, a GitHub result, an earlier conversation. Network commands are then blocked and
+   * "Always allow" is off (the Rule of Two, docs/security.md).
+   */
+  private tainted: string | undefined;
+  /** Hard limits for the current task (tool calls, loops, commands, tokens, time). */
+  private budget: RunBudget | undefined;
+  /** When the agent's last command finished, and how (for the review's "Verified" line). */
+  private lastCommand: { at: number; command: string; exitCode: number | null } | undefined;
 
   private constructor(
     readonly chatId: string,
@@ -132,6 +172,9 @@ export class AgentSession implements vscode.Disposable {
   /** Sends a message; answers every approval the agent asks for until the agent is done. */
   async send(text: string, mentions: readonly Mention[] = []): Promise<void> {
     this.stopped = false;
+    // A new task: a fresh budget and no taint (each request is judged on what it reads).
+    this.tainted = undefined;
+    this.budget = new RunBudget(this.config.security.budget, RUN_COMMAND_TOOL);
     // A new message instead of answering a plan: the user moved on, so edits are not held back.
     if (this.run) this.run.tools.planWaiting = false;
     // The hidden copy and the project map are made at the same time, both without holding
@@ -264,12 +307,35 @@ export class AgentSession implements vscode.Disposable {
   // ---- approvals ----
 
   private readonly emit = (event: MoonEvent): void => {
+    if (event.type === "tool-call") this.noteTaint(event.tool);
+    const breach = this.budget?.observe(event);
+    if (breach) void this.budgetStop(breach);
+    // Token counts are for the budget only; the panel never shows them.
+    if (event.type === "usage") return;
     this.memory.observe(event, this.chat.model);
     // A plan was proposed: no edits until the user approves it (the guard in edit_file).
     if (event.type === "tool-call" && event.tool === PROPOSE_PLAN_TOOL && this.run) this.run.tools.planWaiting = true;
     if (event.type === "session") this.deps.post({ type: "conversation", chatId: this.chatId, conversationId: this.memory.id });
     this.deps.post({ type: "event", chatId: this.chatId, event });
   };
+
+  /** Marks the task as tainted when the agent used a tool whose result comes from outside the project. */
+  private noteTaint(tool: string): void {
+    if (this.tainted) return;
+    const outside = UNTRUSTED_SOURCE_TOOLS.includes(tool) || (!MOON_TOOL_NAMES.has(tool) && !TRUEFORGE_INTERNAL_TOOLS.includes(tool));
+    if (!outside) return;
+    this.tainted = tool;
+    this.deps.audit({ kind: "taint", detail: `the task read outside content (${tool}): network commands blocked, "Always" off`, tool });
+  }
+
+  /** A hard limit was hit: the task stops exactly as with Stop (nothing half-done reaches the files). */
+  private async budgetStop(reason: string): Promise<void> {
+    this.budget = undefined;
+    this.deps.audit({ kind: "budget", detail: `task stopped: ${reason}` });
+    this.deps.post({ type: "event", chatId: this.chatId, event: { type: "notice", text: `Moon stopped this task: ${reason} (security.budget in config).` } });
+    void vscode.window.showWarningMessage(`Moon stopped the task: ${reason}. Nothing was written to your files.`);
+    await this.stop();
+  }
 
   private async decide(requests: readonly ApprovalRequest[]): Promise<ApprovalAnswer[] | undefined> {
     const answers: ApprovalAnswer[] = [];
@@ -292,19 +358,22 @@ export class AgentSession implements vscode.Disposable {
   }
 
   private async decideTool(request: ApprovalRequest): Promise<ApprovalDecision | undefined> {
-    const full = JSON.stringify(request.args, null, 2);
+    // Hidden characters made visible: what the user reads is what will be sent.
+    const full = revealHidden(JSON.stringify(request.args, null, 2)).text;
+    this.deps.audit({ kind: "approval", detail: "asked", tool: request.tool, tainted: this.tainted !== undefined });
     const max = this.config.ui.approvalArgsMaxChars;
     const allow = await new Promise<boolean | undefined>((resolve) => {
       this.waiting = { kind: "tool", requestId: request.toolCallId, resolve };
       this.deps.post({
         type: "tool-approval",
         chatId: this.chatId,
-        approval: { requestId: request.toolCallId, tool: request.tool, args: full.slice(0, max), truncated: full.length > max },
+        approval: { requestId: request.toolCallId, tool: request.tool, args: full.slice(0, max), truncated: full.length > max, tainted: this.tainted },
       });
     });
     this.deps.post({ type: "tool-approval", chatId: this.chatId, approval: undefined });
     if (allow === undefined) return undefined;
     this.deps.output.appendLine(`[agent] ${request.tool}: ${allow ? "allowed" : "denied"} by the user`);
+    this.deps.audit({ kind: "approval", detail: allow ? "allowed" : "denied", tool: request.tool });
     return allow ? { allow: true } : { allow: false, reason: `The user denied ${request.tool}.` };
   }
 
@@ -378,27 +447,56 @@ export class AgentSession implements vscode.Disposable {
 
   private async decideCommand(request: ApprovalRequest): Promise<ApprovalDecision | undefined> {
     const command = String(request.args.command ?? "");
-    if (this.alwaysAllowed.has(command)) return { allow: true };
     const cwd = typeof request.args.cwd === "string" ? request.args.cwd : undefined;
+    if (!vscode.workspace.isTrusted) {
+      this.deps.audit({ kind: "blocked", detail: "command in an untrusted workspace", tool: RUN_COMMAND_TOOL });
+      return { allow: false, reason: RESTRICTED_MODE_REASON };
+    }
+    // The policy decides first: a blocked command never reaches a card.
+    const verdict = checkCommand(command, this.config.security, this.tainted !== undefined);
+    if (verdict.blocked) {
+      this.deps.audit({ kind: "blocked", detail: verdict.blocked, tool: RUN_COMMAND_TOOL });
+      this.memory.decision(`Moon blocked the command (${verdict.blocked}): ${command}`);
+      this.deps.post({ type: "event", chatId: this.chatId, event: { type: "notice", text: `Moon blocked a command: ${verdict.blocked}` } });
+      return {
+        allow: false,
+        reason: `Moon blocked this command: ${verdict.blocked}. Do not try to reach the same result another way; if it is really needed, tell the user to run it themselves.`,
+      };
+    }
+    const grant = (always: boolean) => this.run?.approvals.grant(RUN_COMMAND_TOOL, { command, cwd }, always);
+    if (this.alwaysAllowed.has(command) && !this.tainted) {
+      grant(true);
+      return { allow: true };
+    }
+    this.deps.audit({ kind: "approval", detail: "asked", tool: RUN_COMMAND_TOOL, warnings: verdict.warnings.length, tainted: this.tainted !== undefined });
     const decision = await new Promise<CommandDecision | undefined>((resolve) => {
       this.waiting = { kind: "command", requestId: request.toolCallId, resolve };
       this.deps.post({
         type: "command-approval",
         chatId: this.chatId,
-        approval: { requestId: request.toolCallId, command, cwd, risks: commandRisks(command) },
+        approval: { requestId: request.toolCallId, command, cwd, risks: verdict.warnings, tainted: this.tainted },
       });
     });
     this.deps.post({ type: "command-approval", chatId: this.chatId, approval: undefined });
     if (decision === undefined) return undefined;
+    this.deps.audit({ kind: "approval", detail: decision === "deny" ? "denied" : decision === "always" ? "allowed always" : "allowed once", tool: RUN_COMMAND_TOOL });
     if (decision === "deny") {
       this.memory.decision(`the user denied the command: ${command}`);
       return { allow: false, reason: "The user denied this command." };
     }
-    if (decision === "always") this.alwaysAllowed.add(command);
+    // "Always" never applies in a tainted task (the card hides it too).
+    const always = decision === "always" && !this.tainted;
+    if (always) this.alwaysAllowed.add(command);
+    // Recorded for run_command, which runs only with this approval (complete mediation).
+    grant(always);
     return { allow: true };
   }
 
   private async decideReview(): Promise<ApprovalDecision | undefined> {
+    if (!vscode.workspace.isTrusted) {
+      this.deps.audit({ kind: "blocked", detail: "apply in an untrusted workspace", tool: APPLY_CHANGES_TOOL });
+      return { allow: false, reason: RESTRICTED_MODE_REASON };
+    }
     const run = this.run;
     if (!run) return { allow: false, reason: "Your working copy is gone (the run was stopped)." };
     const files = run.review((rel) => this.readProjectText(rel)).filter((f) => f.binary || f.hunks.length > 0);
@@ -442,7 +540,8 @@ export class AgentSession implements vscode.Disposable {
         hunks: file.hunks.map((hunk, index) => ({
           index,
           line: hunk.oldStart + 1,
-          lines: hunkWithContext(file, hunk, reviewContextLines),
+          // Hidden characters shown as ⟦U+...⟧ (display only: what is applied is the real text).
+          lines: hunkWithContext(file, hunk, reviewContextLines).map((line) => ({ ...line, text: revealHidden(line.text).text })),
         })),
       })),
       commands: run.commands.map((c) => ({
@@ -452,7 +551,17 @@ export class AgentSession implements vscode.Disposable {
         cancelled: c.cancelled,
         outputTail: c.output.slice(-reviewOutputChars),
       })),
+      warnings: reviewWarnings(files),
+      verified: this.verified(run),
     };
+  }
+
+  /** Whether the agent's last command ran after its last edit, and how it ended (claim, check, act). */
+  private verified(run: AgentRun): ReviewView["verified"] {
+    const last = this.lastCommand;
+    if (!last) return { state: "none" };
+    if (last.at < run.lastEditAt) return { state: "stale", command: last.command, exitCode: last.exitCode };
+    return { state: last.exitCode === 0 ? "passed" : "failed", command: last.command, exitCode: last.exitCode };
   }
 
   // ---- applying (runs inside TrueForge's call of apply_changes, after the user approved) ----
@@ -563,7 +672,10 @@ export class AgentSession implements vscode.Disposable {
         config: this.config,
         editor,
         applyApproved: () => this.applyApproved(),
-        onCommand: (result) => this.memory.command(result),
+        onCommand: (result) => {
+          this.lastCommand = { at: Date.now(), command: result.command, exitCode: result.exitCode };
+          this.memory.command(result);
+        },
       });
     } catch (err) {
       return { error: (err as Error).message };
@@ -575,6 +687,8 @@ export class AgentSession implements vscode.Disposable {
     }
     this.run = run;
     run.tools.memory = this.memory.hooks();
+    run.tools.audit = (entry) => this.deps.audit(entry);
+    this.lastCommand = undefined;
     this.deps.service.setActiveRun(run);
     this.deps.output.appendLine(`[agent] working copy: ${run.copy.dir}`);
     return true;

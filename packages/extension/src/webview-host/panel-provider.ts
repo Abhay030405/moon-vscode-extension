@@ -4,7 +4,7 @@
 import { randomBytes } from "node:crypto";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { deleteConversation, listConversations, readTranscript, searchConversations, type ConversationInfo } from "@moon/core";
+import { LINK_PREVIEW_CHARS, deleteConversation, listConversations, readTranscript, searchConversations, type AuditEntry, type ConversationInfo } from "@moon/core";
 import type { ExtensionToPanel, Mention, MentionCandidate, PanelToExtension } from "@moon/webview-ui/protocol";
 import { AgentSession } from "../agent-run/agent-session.js";
 import type { MoonService } from "../agent-run/moon-service.js";
@@ -26,6 +26,9 @@ export class MoonPanelProvider implements vscode.WebviewViewProvider, vscode.Dis
   /** Red lines, green notes and "Show diff" lenses in files under review. */
   private readonly inEditor: ReviewInEditor;
   private readonly disposables: vscode.Disposable[] = [this.pending];
+
+  /** Link domains the user chose to open in this window (asked once each). */
+  private readonly allowedLinkHosts = new Set<string>();
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -65,7 +68,7 @@ export class MoonPanelProvider implements vscode.WebviewViewProvider, vscode.Dis
         return;
       case "open-session":
       case "open-link":
-        if (/^https?:\/\//.test(message.url)) void vscode.env.openExternal(vscode.Uri.parse(message.url));
+        void this.openLink(message.url);
         return;
       case "panel-error":
         this.output.appendLine(`[panel] error: ${message.message}`);
@@ -184,8 +187,54 @@ export class MoonPanelProvider implements vscode.WebviewViewProvider, vscode.Dis
     await this.listHistory("");
   }
 
+  /**
+   * A link in an answer could carry data out in its address (OWASP LLM10 #9: "?d=<secret>").
+   * Links to trusted domains (security.trustedLinkDomains) and domains the user already allowed
+   * in this window open at once; any other shows the full address and asks first.
+   */
+  private async openLink(url: string): Promise<void> {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return;
+    }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return;
+    const host = parsed.hostname.toLowerCase();
+    const trusted = this.trustedLinkDomains().some((d) => host === d || host.endsWith(`.${d}`)) || this.allowedLinkHosts.has(host);
+    if (!trusted) {
+      const carries = parsed.search || parsed.hash ? `\n\nIt carries data in the address: ${(parsed.search + parsed.hash).slice(0, LINK_PREVIEW_CHARS)}` : "";
+      const choice = await vscode.window.showWarningMessage(
+        `Open a link from Moon's answer?\n\nDomain: ${host}\nFull link: ${url.slice(0, LINK_PREVIEW_CHARS)}${carries}`,
+        { modal: true, detail: "Links written by the model can send data to whoever owns the domain." },
+        "Open",
+        "Copy link",
+      );
+      this.service.audit({ kind: "link", detail: choice === "Open" ? "opened" : choice === "Copy link" ? "copied" : "not opened", host });
+      if (choice === "Copy link") await vscode.env.clipboard.writeText(url);
+      if (choice !== "Open") return;
+      this.allowedLinkHosts.add(host);
+    }
+    await vscode.env.openExternal(vscode.Uri.parse(url));
+  }
+
+  private trustedLinkDomains(): string[] {
+    try {
+      return this.service.currentConfig().security.trustedLinkDomains.map((d) => d.toLowerCase());
+    } catch {
+      return [];
+    }
+  }
+
   private sessionDeps() {
-    return { service: this.service, post: (message: ExtensionToPanel) => this.post(message), output: this.output, pending: this.pending, inEditor: this.inEditor };
+    return {
+      service: this.service,
+      post: (message: ExtensionToPanel) => this.post(message),
+      output: this.output,
+      pending: this.pending,
+      inEditor: this.inEditor,
+      audit: (entry: AuditEntry) => this.service.audit(entry),
+    };
   }
 
   /** Opens a project file the agent chose (only files inside the open folder). */

@@ -42,6 +42,12 @@ export function ReviewScreen({ review, onApply, onDiscard, onOpenDiff }: Props) 
       <div className="moon-review-head">
         <div className="moon-review-title">Review Moon's changes</div>
         {review.summary && <div className="moon-review-summary">{review.summary}</div>}
+        <VerifiedLine verified={review.verified} />
+        {review.warnings.map((w) => (
+          <div key={`${w.rel} ${w.text}`} className="moon-review-security" role="alert">
+            Security: {w.rel} {w.text}.
+          </div>
+        ))}
         <div className="moon-review-bar">
           <span className="moon-review-count">
             {chosen} of {plural(total, "change")} accepted · {plural(review.files.length, "file")}
@@ -144,4 +150,16 @@ function allHunks(review: ReviewView, accept: boolean): Record<string, number[]>
   return Object.fromEntries(
     review.files.map((f) => [f.rel, accept && applicable(f) ? f.hunks.map((h) => h.index) : []]),
   );
+}
+
+/**
+ * Did the agent check its work after its last change? A claim in the summary is not a check:
+ * this line comes from the commands Moon saw it run (OWASP LLM07, claim-check-act).
+ */
+function VerifiedLine({ verified }: { verified: ReviewView["verified"] }) {
+  const command = verified.command ? <code>{verified.command}</code> : null;
+  if (verified.state === "passed") return <div className="moon-review-verified ok">Verified: {command} passed after the last change.</div>;
+  if (verified.state === "failed") return <div className="moon-review-verified failed">Not verified: {command} failed (exit {String(verified.exitCode)}) after the last change.</div>;
+  if (verified.state === "stale") return <div className="moon-review-verified failed">Not verified: files changed after the last check ({command}).</div>;
+  return <div className="moon-review-verified failed">Not verified: the agent ran no tests or checks.</div>;
 }

@@ -3,6 +3,7 @@
 
 import { useEffect, useRef } from "react";
 import type { ToolApprovalView } from "../protocol/messages";
+import { TaintNotice } from "./TaintNotice";
 
 interface Props {
   approval: ToolApprovalView;
@@ -22,6 +23,7 @@ export function ToolApproval({ approval, onDecide }: Props) {
       </div>
       <pre className="moon-card-command">{approval.args}</pre>
       {approval.truncated && <div className="moon-card-meta">The arguments are longer than shown.</div>}
+      {approval.tainted && <TaintNotice source={approval.tainted} />}
       <div className="moon-card-actions">
         <button className="moon-button primary" onClick={() => onDecide(true)}>
           Allow

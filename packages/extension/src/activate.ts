@@ -2,7 +2,7 @@
 
 import * as vscode from "vscode";
 import { MoonService } from "./agent-run/moon-service.js";
-import { CHECK_SETUP_COMMAND } from "./commands.js";
+import { CHECK_SETUP_COMMAND, SECURITY_LOG_COMMAND } from "./commands.js";
 import { InlineEditController } from "./inline-edit/inline-edit.js";
 import { runCheckSetup } from "./status/check-setup.js";
 import { MoonStatusBar } from "./status/status-bar.js";
@@ -22,6 +22,7 @@ export function activate(context: vscode.ExtensionContext): void {
     panel,
     inlineEdit,
     vscode.commands.registerCommand(CHECK_SETUP_COMMAND, () => runCheckSetup(context, output, statusBar)),
+    vscode.commands.registerCommand(SECURITY_LOG_COMMAND, () => service.showSecurityLog()),
     vscode.window.registerWebviewViewProvider(PANEL_VIEW_ID, panel, { webviewOptions: { retainContextWhenHidden: true } }),
   );
 
