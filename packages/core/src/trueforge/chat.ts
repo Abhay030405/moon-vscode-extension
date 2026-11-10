@@ -32,6 +32,8 @@ import type { TrueForgeClient } from "./client.js";
 import { TurnEventMapper, type ApprovalRequest, type MoonEvent, type QuestionRequest } from "./events.js";
 import { NO_REPLY_PREFIX } from "../resilience/error-classifier.js";
 import { ReplyWatchdog, type WatchdogTimes, type WatchedEvent } from "../resilience/watchdog.js";
+import { redactSecrets } from "../safety/secret-scan.js";
+import { revealHidden } from "../safety/unicode.js";
 import { createSession, loadAgentDefinition, sessionUrl } from "./sessions.js";
 
 export interface ChatOptions {
@@ -135,7 +137,7 @@ export class AgentChat {
     const stopped = this.stoppedTurnId;
     this.stoppedTurnId = undefined;
     const finished = this.lastFinishedTurnId ?? "none";
-    await this.runTurn("message", [{ type: "user.message", content: message }], () => stopped ?? finished, emit, message, stopped ? finished : undefined);
+    await this.runTurn("message", [{ type: "user.message", content: scrubForModel(message) }], () => stopped ?? finished, emit, message, stopped ? finished : undefined);
   }
 
   /** Answers the paused turn's approvals; the agent continues in a new turn. */
@@ -283,6 +285,14 @@ export class AgentChat {
   }
 }
 
+/**
+ * Text Moon itself sends (the message with its @-mentioned files, the rules file, the project
+ * map) passes the same filter as tool results: secrets redacted, hidden characters shown.
+ */
+function scrubForModel(text: string): string {
+  return revealHidden(redactSecrets(text).text).text;
+}
+
 /** Moon's opening messages and the rest of the stored spec stay; only the model and Moon's MCP server name change. */
 function refreshedSpec(spec: TrueForgeApi.AgentSpec, model: string, mcpServer: string, prefix: string | undefined): TrueForgeApi.AgentSpec {
   const servers = spec.mcpServers?.map((s) => (prefix && s.name.startsWith(prefix) ? { ...s, name: mcpServer } : s));
@@ -295,7 +305,7 @@ function withSessionContext(
   context: { openingMessages: string[]; compactAtTokens?: number } | undefined,
 ): TrueForgeApi.AgentSpec {
   if (!context) return spec;
-  const messages = [...(spec.messages ?? []), ...context.openingMessages.map((content) => ({ type: "user.message" as const, content }))];
+  const messages = [...(spec.messages ?? []), ...context.openingMessages.map((content) => ({ type: "user.message" as const, content: scrubForModel(content) }))];
   const config = context.compactAtTokens
     ? {
         ...spec.config,

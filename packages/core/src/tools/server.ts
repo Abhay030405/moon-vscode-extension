@@ -14,13 +14,20 @@
 // then aborts the tool's signal (run_command kills its process tree).
 // TrueForge sends no session header, so ids are only unique per endpoint; the agent endpoint
 // serves one run at a time.
+//
+// Who may call it (OWASP LLM03 #7, AISVS C10): only TrueForge. A random token is made on every
+// start, kept in memory only, and registered with TrueForge as a header ("Authorization:
+// Bearer ..."). A request without it gets 401. A request with an Origin header (every browser
+// sends one; TrueForge does not) gets 403, so a web page can never reach the tools. Behind
+// this, run_command still checks the user's approval (safety/approval-ledger.ts).
 
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { MoonConfig } from "../shared/config.js";
-import { AGENT_ENDPOINT_SUFFIX, MCP_MAX_BODY_BYTES, MCP_SERVER_VERSION } from "../shared/constants.js";
+import { AGENT_ENDPOINT_SUFFIX, MCP_MAX_BODY_BYTES, MCP_SERVER_VERSION, MCP_TOKEN_BYTES } from "../shared/constants.js";
 import type { ToolContext } from "./context.js";
 import { registerMoonTools, type ToolCallListener } from "./registry.js";
 import type { MoonTool } from "./tool.js";
@@ -38,6 +45,8 @@ export interface McpEndpoint {
 export interface RunningMcpServer {
   /** Full URL of each endpoint, by endpoint name, e.g. http://127.0.0.1:53211/mcp */
   urls: Record<string, string>;
+  /** The header TrueForge must send ({ Authorization: "Bearer <token>" }). Never log or store it. */
+  authHeaders: Record<string, string>;
   /** Tool calls running now (for tests). */
   readonly runningCalls: number;
   close(): Promise<void>;
@@ -63,8 +72,11 @@ export async function startMcpServer(
   settings: MoonConfig["mcp"],
   endpoints: readonly McpEndpoint[],
   onCall?: ToolCallListener,
+  onRejected?: (reason: string) => void,
 ): Promise<RunningMcpServer> {
   let allowedHosts: string[] = [];
+  const token = randomBytes(MCP_TOKEN_BYTES).toString("hex");
+  const expected = Buffer.from(`Bearer ${token}`);
   /** Running tools/call requests ("<path>#<id>") and how to cancel each. */
   const running = new Map<string, () => void>();
 
@@ -73,6 +85,17 @@ export async function startMcpServer(
     const endpoint = endpoints.find((e) => e.path === url.pathname);
     if (!endpoint) {
       res.writeHead(404).end();
+      return;
+    }
+    if (req.headers.origin !== undefined) {
+      onRejected?.(`request from a browser page (Origin ${req.headers.origin})`);
+      res.writeHead(403).end();
+      return;
+    }
+    const given = Buffer.from(req.headers.authorization ?? "");
+    if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+      onRejected?.(given.length === 0 ? "request without Moon's token" : "request with a wrong token");
+      res.writeHead(401).end();
       return;
     }
     let body: unknown;
@@ -147,6 +170,7 @@ export async function startMcpServer(
       return running.size;
     },
     urls: Object.fromEntries(endpoints.map((e) => [e.name, `http://${settings.host}:${port}${e.path}`])),
+    authHeaders: { Authorization: `Bearer ${token}` },
     close: () =>
       new Promise<void>((resolve) => {
         server.closeAllConnections();

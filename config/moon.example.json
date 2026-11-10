@@ -1,6 +1,6 @@
 {
   "trueforge": {
-    "version": "latest",
+    "version": "0.184.2",
     "baseUrl": "http://localhost:8790",
     "port": 8790,
     "requestTimeoutMs": 5000,
@@ -131,11 +131,184 @@
     "historyPageSize": 50,
     "maxKeptCopies": 3
   },
+  "security": {
+    "approvalTtlMs": 300000,
+    "commandEnvAllow": [
+      "PATH",
+      "PATHEXT",
+      "SYSTEMROOT",
+      "SYSTEMDRIVE",
+      "WINDIR",
+      "COMSPEC",
+      "TEMP",
+      "TMP",
+      "TMPDIR",
+      "HOME",
+      "USERPROFILE",
+      "HOMEDRIVE",
+      "HOMEPATH",
+      "APPDATA",
+      "LOCALAPPDATA",
+      "PROGRAMDATA",
+      "PROGRAMFILES",
+      "PROGRAMFILES(X86)",
+      "COMMONPROGRAMFILES",
+      "NUMBER_OF_PROCESSORS",
+      "PROCESSOR_ARCHITECTURE",
+      "OS",
+      "USER",
+      "USERNAME",
+      "LOGNAME",
+      "SHELL",
+      "TERM",
+      "LANG",
+      "LC_ALL",
+      "LC_CTYPE",
+      "PYTHONIOENCODING",
+      "PYTHONUTF8",
+      "NODE_ENV"
+    ],
+    "secretEnvNamePattern": "TOKEN|SECRET|PASSW|PWD$|API_?KEY|ACCESS_?KEY|PRIVATE_?KEY|CREDENTIAL|AUTH|SESSION|COOKIE|CONNECTION_?STRING",
+    "blockCommandNetwork": true,
+    "networkBlockEnv": {
+      "HTTP_PROXY": "http://127.0.0.1:9",
+      "HTTPS_PROXY": "http://127.0.0.1:9",
+      "ALL_PROXY": "http://127.0.0.1:9",
+      "http_proxy": "http://127.0.0.1:9",
+      "https_proxy": "http://127.0.0.1:9",
+      "all_proxy": "http://127.0.0.1:9",
+      "NO_PROXY": "localhost,127.0.0.1,::1",
+      "no_proxy": "localhost,127.0.0.1,::1",
+      "npm_config_proxy": "http://127.0.0.1:9",
+      "npm_config_https_proxy": "http://127.0.0.1:9",
+      "PIP_NO_INDEX": "1"
+    },
+    "blockedCommandPatterns": [
+      {
+        "pattern": "\\b(powershell|pwsh)(\\.exe)?\\b.*\\s-(e|ec|en|enc|enco|encodedcommand)\\b",
+        "reason": "runs an encoded (hidden) PowerShell command"
+      },
+      {
+        "pattern": "\\b(iex|invoke-expression)\\b",
+        "reason": "runs text as code (Invoke-Expression)"
+      },
+      {
+        "pattern": "base64\\s+(-d|--decode|-D)\\b.*\\|",
+        "reason": "decodes hidden text and pipes it on"
+      },
+      {
+        "pattern": "(^|[^|])\\|\\s*(sh|bash|zsh|cmd|powershell|pwsh|python[0-9.]*|node)\\b",
+        "reason": "pipes text into a shell or interpreter"
+      },
+      {
+        "pattern": "\\bgit\\s+push\\b",
+        "reason": "pushes to a remote (do it yourself after reviewing)"
+      },
+      {
+        "pattern": "\\bgit\\s+remote\\s+(add|set-url)\\b",
+        "reason": "changes git remotes"
+      },
+      {
+        "pattern": "\\bgit\\s+config\\b.*\\b(core\\.hooksPath|core\\.sshCommand|credential)",
+        "reason": "changes git hooks or credentials"
+      },
+      {
+        "pattern": "\\b(reg(\\.exe)?\\s+(add|delete|import)|schtasks|sc(\\.exe)?\\s+(create|config|delete)|new-service|set-service|bcdedit|vssadmin)\\b",
+        "reason": "changes system settings, services or scheduled tasks"
+      },
+      {
+        "pattern": "\\b(set-itemproperty|new-itemproperty)\\b.*\\bhk(lm|cu):",
+        "reason": "changes the Windows registry"
+      },
+      {
+        "pattern": "\\b(format\\s+[a-z]:|diskpart|mkfs(\\.\\w+)?|shutdown|reboot)\\b",
+        "reason": "affects the whole machine"
+      },
+      {
+        "pattern": "\\brm\\s+-\\w*r\\w*\\s+(/|~|\\$HOME|[a-z]:[\\\\/])(\\s|$)",
+        "reason": "deletes a whole drive or home folder"
+      },
+      {
+        "pattern": "\\b(crontab|launchctl|systemctl)\\b",
+        "reason": "changes background services"
+      },
+      {
+        "pattern": "(>|>>|tee\\s+)\\s*~?[\\\\/]?\\.?(bashrc|zshrc|profile|bash_profile)\\b",
+        "reason": "changes a shell start-up file"
+      }
+    ],
+    "networkCommandPatterns": [
+      {
+        "pattern": "\\b(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod|start-bitstransfer|bitsadmin|certutil\\b.*-urlcache)\\b",
+        "reason": "downloads or sends data over the network"
+      },
+      {
+        "pattern": "\\b(scp|sftp|ssh|ftp|tftp|nc|ncat|netcat|telnet|rsync)\\b",
+        "reason": "connects to another machine"
+      },
+      {
+        "pattern": "\\b(python[0-9.]*|py)\\b.*\\s-c\\b.*\\b(urllib|requests|http\\.client|socket|httpx|aiohttp)\\b",
+        "reason": "runs inline Python that uses the network"
+      },
+      {
+        "pattern": "\\bnode\\b.*\\s(-e|--eval|-p)\\b.*\\b(http|https|fetch|net|dgram)\\b",
+        "reason": "runs inline Node.js that uses the network"
+      },
+      {
+        "pattern": "\\b(pip|pip3|uv|poetry|npm|pnpm|yarn|gem|cargo|go)\\s+(install|add|i|get|fetch)\\b",
+        "reason": "downloads packages"
+      },
+      {
+        "pattern": "\\bgit\\s+(clone|fetch|pull|ls-remote)\\b",
+        "reason": "contacts a git server"
+      }
+    ],
+    "trustedLinkDomains": [
+      "docs.python.org",
+      "flask.palletsprojects.com",
+      "palletsprojects.com",
+      "developer.mozilla.org",
+      "code.visualstudio.com",
+      "nodejs.org",
+      "typescriptlang.org",
+      "github.com",
+      "docs.github.com"
+    ],
+    "hiddenCharWarnThreshold": 3,
+    "summaryMaxChars": 300,
+    "budget": {
+      "maxToolCallsPerTask": 200,
+      "maxIdenticalCalls": 6,
+      "maxCommandsPerTask": 30,
+      "maxTokensPerTask": 3000000,
+      "maxTaskMs": 2700000
+    },
+    "auditLog": {
+      "enabled": true,
+      "retentionDays": 30
+    }
+  },
   "extras": {
     "webSearch": false,
     "github": {
       "enabled": false,
-      "serverName": "github"
+      "serverName": "github",
+      "enableTools": [
+        "get_me",
+        "get_issue",
+        "list_issues",
+        "search_issues",
+        "get_issue_comments",
+        "get_pull_request",
+        "list_pull_requests",
+        "get_pull_request_files",
+        "get_file_contents",
+        "search_code",
+        "list_commits",
+        "create_issue",
+        "add_issue_comment",
+        "create_pull_request"
+      ]
     }
   }
 }

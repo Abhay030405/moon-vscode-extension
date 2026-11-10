@@ -37,6 +37,10 @@ export const proposeEditTool = defineTool({
     if (rel !== target.rel) {
       throw new ToolError(`This inline edit may only change "${target.rel}", not "${rel}".`);
     }
+    for (const e of args.edits) {
+      ctx.checkWritable(e.old_text);
+      ctx.checkWritable(e.new_text);
+    }
     const current = ctx.readText(abs, rel);
     let proposed: string;
     try {

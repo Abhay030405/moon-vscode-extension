@@ -13,6 +13,11 @@ import type { TrueForgeClient } from "./client.js";
 
 /** Tools of the GitHub server that pause for the user's approval (TrueForge's selectors). */
 const GITHUB_APPROVAL_SELECTORS = ["@write", "@destructive"];
+/**
+ * GitHub tools that change something, named outright too: the selectors above depend on the
+ * server's annotations, which Moon could not verify for a remote server.
+ */
+const GITHUB_WRITE_TOOL = /^(create|add|update|merge|delete|push|fork|close|assign|request|submit|dismiss|remove)_/;
 
 export interface ExtrasCheck {
   webSearch: boolean;
@@ -59,8 +64,9 @@ export function withExtras(spec: TrueForgeApi.AgentSpec, check: ExtrasCheck, ext
   if (check.github) {
     const github: TrueForgeApi.McpServer = {
       name: extras.github.serverName,
-      enableTools: ["@all"],
-      requireApprovalForTools: GITHUB_APPROVAL_SELECTORS,
+      // An explicit list (OWASP LLM03 #1, LLM04): a tool the server adds later is never on by itself.
+      enableTools: extras.github.enableTools,
+      requireApprovalForTools: [...GITHUB_APPROVAL_SELECTORS, ...extras.github.enableTools.filter((t) => GITHUB_WRITE_TOOL.test(t))],
     };
     result = { ...result, mcpServers: [...(result.mcpServers ?? []), github] };
   }

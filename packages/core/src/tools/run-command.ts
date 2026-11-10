@@ -4,6 +4,9 @@
 import * as path from "node:path";
 import { z } from "zod";
 import { buildCommandEnv, runCommand } from "../process/runner.js";
+import { allowedEnv } from "../safety/command-env.js";
+import { checkCommand } from "../safety/command-policy.js";
+import { stripControl } from "../safety/unicode.js";
 import { wrapUntrusted } from "../safety/untrusted-text.js";
 import { ToolError } from "./context.js";
 import { defineTool } from "./tool.js";
@@ -23,6 +26,17 @@ export const runCommandTool = defineTool({
   async run(ctx, args, signal) {
     const run = ctx.agentRun;
     if (!run) throw new ToolError("run_command only works in agent mode.");
+    // Complete mediation: only a call the user approved, with exactly these arguments, runs.
+    if (!run.approvals.consume("run_command", { command: args.command, cwd: args.cwd })) {
+      ctx.audit?.({ kind: "blocked", detail: "run_command without the user's approval", tool: "run_command" });
+      throw new ToolError("This command was not approved by the user, so it was not run. Ask again through run_command.");
+    }
+    // Blocked commands never run, even when approved (defence in depth; the card refuses them first).
+    const verdict = checkCommand(args.command, ctx.security, false);
+    if (verdict.blocked) {
+      ctx.audit?.({ kind: "blocked", detail: verdict.blocked, tool: "run_command" });
+      throw new ToolError(`Moon blocked this command: ${verdict.blocked}.`);
+    }
     const cwd = args.cwd ? ctx.paths.resolve(args.cwd).abs : run.copy.dir;
     const settings = ctx.runSettings;
 
@@ -37,7 +51,8 @@ export const runCommandTool = defineTool({
       result = await runCommand({
         command: args.command,
         cwd,
-        env: buildCommandEnv(process.env, settings.commandEnv, { copy: run.copy.dir, project: run.copy.projectRoot }),
+        // Only allowed variables (no tokens or keys), plus Moon's commandEnv (safety/command-env.ts).
+        env: buildCommandEnv(allowedEnv(process.env, ctx.security), settings.commandEnv, { copy: run.copy.dir, project: run.copy.projectRoot }),
         timeoutMs: settings.commandTimeoutMs,
         maxOutputChars: settings.commandOutputMaxChars,
         killGraceMs: settings.killGraceMs,
@@ -47,6 +62,7 @@ export const runCommandTool = defineTool({
       run.signal.removeEventListener("abort", onStop);
       signal?.removeEventListener("abort", onStop);
     }
+    result = { ...result, output: stripControl(result.output) };
     run.onCommand?.(result);
 
     const status = result.cancelled

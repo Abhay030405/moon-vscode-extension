@@ -63,6 +63,8 @@ export type MoonEvent =
   | { type: "approval"; requests: ApprovalRequest[] }
   /** The agent asked the user a question (the turn then ends "paused" until it is answered). */
   | { type: "question"; request: QuestionRequest }
+  /** Tokens one model call used (for the per-task budget; the panel never shows it). */
+  | { type: "usage"; inputTokens: number; outputTokens: number }
   /** The turn ended. "paused" = waiting for approval or an answer; answer it to continue. */
   | { type: "done"; status: "done" | "paused" | "cancelled" | "error"; message?: string };
 
@@ -85,7 +87,7 @@ export class TurnEventMapper {
       case "model.message":
         this.messages.set(event.id, { ...event, toolCalls: event.toolCalls ? [...event.toolCalls] : undefined });
         // A message sent whole (not streamed) is already finished.
-        return event.finishReason !== undefined ? this.finish(event.id) : [];
+        return [...usageOf(event), ...(event.finishReason !== undefined ? this.finish(event.id) : [])];
 
       case "model.message.delta": {
         const out: MoonEvent[] = [];
@@ -93,6 +95,7 @@ export class TurnEventMapper {
         const base = this.messages.get(event.id);
         if (base) mergeEventDelta(base, event);
         if (event.finishReason) out.push(...this.finish(event.id));
+        out.push(...usageOf(event));
         return out;
       }
 
@@ -160,6 +163,13 @@ export class TurnEventMapper {
       return events;
     });
   }
+}
+
+/** The usage a model message carries, as an event (none when TrueForge sent no usage). */
+function usageOf(event: { usage?: { inputTokens?: number; outputTokens?: number } }): MoonEvent[] {
+  const usage = event.usage;
+  if (!usage) return [];
+  return [{ type: "usage", inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0 }];
 }
 
 /** The files of a report_context call (ignores malformed entries). */
