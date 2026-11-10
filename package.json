@@ -14,7 +14,8 @@
     "eval:retrieval": "pnpm --filter @moon/evals retrieval",
     "eval:cancel": "pnpm --filter @moon/evals cancel",
     "eval:resilience": "pnpm --filter @moon/evals resilience",
-    "eval:safety": "pnpm --filter @moon/evals safety"
+    "eval:safety": "pnpm --filter @moon/evals safety",
+    "check:security": "pnpm --filter @moon/evals check-security"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

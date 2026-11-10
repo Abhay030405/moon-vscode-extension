@@ -26,7 +26,7 @@ When unsure whether something breaks a rule, ask.
 
 Breaking any of these disqualifies the submission.
 
-- The agent loop runs on **TrueForge** (local mode, `npx @truefoundry/trueforge@latest`). Moon never runs its own agent loop.
+- The agent loop runs on **TrueForge** (local mode, `npx @truefoundry/trueforge@<version>`, pinned to the tested version in `trueforge.version` of the config; currently 0.184.2). Moon never runs its own agent loop.
 - The extension is a **client of a TrueForge agent**: it creates sessions and sends turns through the TrueForge HTTP API or TypeScript SDK, and renders the streamed events.
 - The extension **never calls a model provider directly**: not for inline edit, embeddings, health checks or fallback pings. Everything goes through a TrueForge session.
 - Editor capabilities (read file, search, propose a write, run a command) are exposed as **MCP tools**, so the **agent decides** what to read and change, not the extension.

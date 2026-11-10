@@ -151,10 +151,11 @@ async function stopAt(live: Live, root: string, moment: Moment): Promise<MomentR
       stop("moon"); // the card is open; the user presses Stop instead of answering
       break;
     }
-    const answers: ApprovalAnswer[] = waiting.map((request) => ({
-      request,
-      decision: request.tool === "run_command" ? { allow: true } : { allow: false, reason: "Evaluation run: not applied." },
-    }));
+    const answers: ApprovalAnswer[] = waiting.map((request) => {
+      // As the extension does: an allowed command is recorded, or run_command refuses it.
+      if (request.tool === "run_command") run.approvals.grant("run_command", { command: request.args.command, cwd: request.args.cwd });
+      return { request, decision: request.tool === "run_command" ? { allow: true } : { allow: false, reason: "Evaluation run: not applied." } };
+    });
     if (moment === "command" || moment === "trueforge-cancel") {
       later(TIMING.commandRunning, () => {
         commandWasRunning = processesWith(marker).length > 0;

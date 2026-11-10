@@ -143,6 +143,8 @@ export interface Live {
   setRun(run: AgentRun | undefined): void;
   /** A new TrueForge chat with the committed agent definition and the main model. */
   newChat(model?: string): AgentChat;
+  /** The agent endpoint's URL and Moon's token header (for the direct-call security check). */
+  agentEndpoint: { url: string; headers: Record<string, string> };
   close(): Promise<void>;
 }
 
@@ -153,12 +155,13 @@ export async function startLive(config: MoonConfig, client: TrueForgeClient): Pr
     { name: names.editor, path: names.editorPath, tools: EDITOR_TOOLS, context: () => undefined },
     { name: names.agent, path: names.agentPath, tools: AGENT_TOOLS, context: () => active?.tools },
   ]);
-  await registerMcpServer(client, { name: names.agent, url: mcp.urls[names.agent]!, description: MOON_MCP_DESCRIPTION });
+  await registerMcpServer(client, { name: names.agent, url: mcp.urls[names.agent]!, description: MOON_MCP_DESCRIPTION, headers: mcp.authHeaders });
   return {
     config,
     client,
     assembler: new ContextAssembler(treeSitterPaths(), undefined, config),
     setRun: (run) => (active = run),
+    agentEndpoint: { url: mcp.urls[names.agent]!, headers: mcp.authHeaders },
     newChat: (model = modelRef(config.models.main)) =>
       new AgentChat({
         client,
