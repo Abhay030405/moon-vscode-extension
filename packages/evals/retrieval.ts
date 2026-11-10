@@ -8,7 +8,7 @@
 //    Approvals asked before that are denied, so nothing runs and nothing is applied.
 // Scored: how many "must" files were chosen, which were missed, and which extras were added.
 //
-// Usage (from packages/evals): pnpm retrieval [--model main|backup] [--map-only] [--only <scenario id>] [--trace]
+// Usage (from packages/evals): pnpm retrieval [--set v2] [--model main|backup] [--map-only] [--only <scenario id>] [--trace]
 // --trace prints every event of the agent runs (to see what the agent and its scout did).
 
 import { readFileSync } from "node:fs";
@@ -71,7 +71,7 @@ const trace = flag("trace") === true;
 const DENY_REASON = "Evaluation run: only choosing files is being checked, nothing is run or applied.";
 
 async function main(): Promise<void> {
-  const file = JSON.parse(readFileSync(path.join(EVALS_DIR, "scenarios", "retrieval.json"), "utf8")) as ScenarioFile;
+  const file = JSON.parse(readFileSync(path.join(EVALS_DIR, "scenarios", typeof flag("set") === "string" ? `retrieval-${flag("set")}.json` : "retrieval.json"), "utf8")) as ScenarioFile;
   const only = flag("only");
   const scenarios = file.scenarios.filter((s) => typeof only !== "string" || s.id === only);
   const mapOnly = flag("map-only") === true;

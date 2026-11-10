@@ -1,0 +1,67 @@
+{
+  "$comment": "Held-out retrieval set v2, written 11 Nov 2026 after the first set had been run and tuned against. Ten new requests on Flask 3.1.3 that name no files and do not overlap the first set. 'must' = files a developer would have to touch; 'ok' = reasonable to look at too. The answer key was written by reading the Flask source at the pinned commit BEFORE any run, and is not changed after seeing results.",
+  "repo": "flask",
+  "turnTimeoutMs": 240000,
+  "scenarios": [
+    {
+      "id": "prefixed-env-separator",
+      "request": "Let callers choose a different separator than the double underscore for nested keys when loading config from prefixed environment variables. Add a test and document it.",
+      "must": ["src/flask/config.py", "tests/test_config.py", "docs/config.rst"],
+      "ok": ["CHANGES.rst", "src/flask/app.py", "src/flask/sansio/app.py", "docs/api.rst"]
+    },
+    {
+      "id": "session-set-values",
+      "request": "Storing a Python set in the session should work and come back as a set on the next request. Add a test.",
+      "must": ["src/flask/json/tag.py", "tests/test_json_tag.py"],
+      "ok": ["CHANGES.rst", "src/flask/sessions.py", "docs/api.rst", "tests/test_basic.py", "tests/test_session_interface.py", "src/flask/json/provider.py", "src/flask/json/__init__.py"]
+    },
+    {
+      "id": "instance-path-env",
+      "request": "When no instance path is passed to the app, let users set the instance folder with a FLASK_INSTANCE_PATH environment variable. Test it and document it.",
+      "must": ["src/flask/sansio/app.py", "tests/test_instance_config.py", "docs/config.rst"],
+      "ok": ["CHANGES.rst", "src/flask/app.py", "src/flask/sansio/scaffold.py", "src/flask/cli.py", "src/flask/helpers.py"]
+    },
+    {
+      "id": "blueprint-prefix-slash",
+      "request": "Registering a blueprint with a url_prefix that does not start with a slash should raise a clear ValueError. Add a test.",
+      "must": ["src/flask/sansio/blueprints.py", "tests/test_blueprints.py"],
+      "ok": ["CHANGES.rst", "src/flask/blueprints.py", "src/flask/sansio/app.py", "src/flask/app.py", "docs/blueprints.rst"]
+    },
+    {
+      "id": "flashed-messages-limit",
+      "request": "Let templates ask for only the newest N flashed messages by adding a limit argument to the function that returns them. Add a test.",
+      "must": ["src/flask/helpers.py", "tests/test_basic.py"],
+      "ok": ["CHANGES.rst", "docs/patterns/flashing.rst", "docs/api.rst", "src/flask/templating.py", "src/flask/app.py", "tests/test_helpers.py", "tests/test_templating.py"]
+    },
+    {
+      "id": "json-error-message",
+      "request": "When a request body is invalid JSON and debug is off, the 400 response should still say the JSON could not be parsed, without the parser details. Add a test.",
+      "must": ["src/flask/wrappers.py", "tests/test_json.py"],
+      "ok": ["CHANGES.rst", "tests/test_request.py", "src/flask/json/provider.py", "src/flask/json/__init__.py", "src/flask/debughelpers.py", "docs/errorhandling.rst", "tests/test_basic.py"]
+    },
+    {
+      "id": "session-saved-signal",
+      "request": "Add a signal that is sent right after the session is saved to the response. Document it with the other signals and test it.",
+      "must": ["src/flask/signals.py", "src/flask/app.py", "tests/test_signals.py", "docs/api.rst"],
+      "ok": ["CHANGES.rst", "src/flask/__init__.py", "src/flask/sessions.py", "docs/signals.rst", "src/flask/testing.py"]
+    },
+    {
+      "id": "routes-endpoint-filter",
+      "request": "Add an option to flask routes that only lists routes whose endpoint starts with a given prefix. Add a test.",
+      "must": ["src/flask/cli.py", "tests/test_cli.py"],
+      "ok": ["CHANGES.rst", "docs/cli.rst"]
+    },
+    {
+      "id": "autoescape-extensions-config",
+      "request": "Make the list of template file extensions that get autoescaped configurable through a config value. Test it and document it.",
+      "must": ["src/flask/sansio/app.py", "src/flask/app.py", "tests/test_templating.py", "docs/config.rst"],
+      "ok": ["CHANGES.rst", "docs/templating.rst", "src/flask/templating.py"]
+    },
+    {
+      "id": "test-client-default-headers",
+      "request": "Let the test client take default headers that are sent with every request it makes. Add a test and mention it in the testing docs.",
+      "must": ["src/flask/testing.py", "tests/test_testing.py", "docs/testing.rst"],
+      "ok": ["CHANGES.rst", "src/flask/app.py", "src/flask/sansio/app.py", "tests/conftest.py"]
+    }
+  ]
+}
