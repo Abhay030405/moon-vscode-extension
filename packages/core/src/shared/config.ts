@@ -161,6 +161,41 @@ export const MoonConfigSchema = z
       /** Hidden copies kept for unfinished reviews (older ones are deleted at start). */
       maxKeptCopies: positiveInt,
     }),
+    security: z.strictObject({
+      /** A one-time approval must be used by its tool call within this long (the approval ledger). */
+      approvalTtlMs: positiveInt,
+      /** Environment variables commands may inherit (case-insensitive). Everything else is dropped. */
+      commandEnvAllow: z.array(z.string().min(1)),
+      /** A variable whose NAME matches this regex is never passed to commands, even if allowed. */
+      secretEnvNamePattern: z.string().min(1),
+      /** Point commands' proxy settings at a dead port so most tools can't reach the internet. */
+      blockCommandNetwork: z.boolean(),
+      /** The variables blockCommandNetwork sets. */
+      networkBlockEnv: z.record(z.string(), z.string()),
+      /** Commands that never run (regex, case-insensitive, checked on every chained part). */
+      blockedCommandPatterns: z.array(z.strictObject({ pattern: z.string().min(1), reason: z.string().min(1) })),
+      /** Commands that use the network: a warning, and blocked after untrusted content in the same task. */
+      networkCommandPatterns: z.array(z.strictObject({ pattern: z.string().min(1), reason: z.string().min(1) })),
+      /** Links to these domains (and their subdomains) open without asking. */
+      trustedLinkDomains: z.array(z.string().min(1)),
+      /** This many hidden characters in one tool result adds an injection warning to it. */
+      hiddenCharWarnThreshold: positiveInt,
+      /** Longest summary save_summary accepts. */
+      summaryMaxChars: positiveInt,
+      /** Hard limits per task (one request and everything it leads to). */
+      budget: z.strictObject({
+        maxToolCallsPerTask: positiveInt,
+        maxIdenticalCalls: positiveInt,
+        maxCommandsPerTask: positiveInt,
+        maxTokensPerTask: positiveInt,
+        maxTaskMs: positiveInt,
+      }),
+      /** Moon's security log (approvals, blocks, redactions). */
+      auditLog: z.strictObject({
+        enabled: z.boolean(),
+        retentionDays: positiveInt,
+      }),
+    }),
     extras: z.strictObject({
       /** TrueForge's built-in web search and fetch (needs a provider key set in TrueForge). Off by default. */
       webSearch: z.boolean(),
@@ -168,6 +203,8 @@ export const MoonConfigSchema = z
       github: z.strictObject({
         enabled: z.boolean(),
         serverName: z.string().min(1),
+        /** The GitHub tools the agent may use (an explicit list, so a tool the server adds later is never on by itself). */
+        enableTools: z.array(z.string().min(1)).min(1),
       }),
     }),
   })
