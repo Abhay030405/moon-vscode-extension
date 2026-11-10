@@ -177,3 +177,72 @@ export const REPORT_CONTEXT_TOOL = "report_context";
 
 /** The tool the agent calls to show its plan before a big task (needs the user's approval). */
 export const PROPOSE_PLAN_TOOL = "propose_plan";
+
+// ---- Security (OWASP LLM Top 10 2026; docs/security.md) ----
+
+/** Start of the text that replaces a secret in tool results: «secret redacted: kind». */
+export const REDACTION_PREFIX = "«secret redacted: ";
+
+/** Known secret formats, found anywhere in text sent to the model (safety/secret-scan.ts). */
+export const SECRET_PATTERNS: readonly { kind: string; pattern: string }[] = [
+  { kind: "private-key", pattern: String.raw`-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)` },
+  { kind: "aws-access-key", pattern: String.raw`\b(?:AKIA|ASIA)[0-9A-Z]{16}\b` },
+  { kind: "github-token", pattern: String.raw`\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{60,})\b` },
+  { kind: "api-key", pattern: String.raw`\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{20,}` },
+  { kind: "stripe-key", pattern: String.raw`\b[sr]k_(?:live|test)_[0-9A-Za-z]{16,}\b` },
+  { kind: "slack-token", pattern: String.raw`\bxox[abprs]-[A-Za-z0-9-]{10,}` },
+  { kind: "google-api-key", pattern: String.raw`\bAIza[0-9A-Za-z_-]{35}\b` },
+  { kind: "npm-token", pattern: String.raw`\bnpm_[A-Za-z0-9]{36}\b` },
+  { kind: "huggingface-token", pattern: String.raw`\bhf_[A-Za-z0-9]{30,}\b` },
+  { kind: "azure-account-key", pattern: String.raw`AccountKey=[A-Za-z0-9+/=]{40,}` },
+  { kind: "jwt", pattern: String.raw`\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}` },
+  { kind: "url-password", pattern: String.raw`\b[a-z][a-z0-9+.-]*://[^\s:/@"']+:[^\s@/"']{4,}@` },
+];
+
+/** `name = "value"` where the name says secret; group 1 is the value (redacted if random-looking). */
+export const SECRET_ASSIGNMENT = String.raw`\b[\w.-]*(?:secret|token|passw(?:or)?d|pwd|api[_-]?key|access[_-]?key|private[_-]?key|credential|auth[_-]?key)[\w.-]*["']?\s*[:=]\s*["']([^"'\s]{12,})["']`;
+
+/** Bits per character above which an assigned value counts as a real secret (words score lower). */
+export const SECRET_MIN_ENTROPY = 3.5;
+
+/**
+ * Characters you can't see, as regex class ranges: tag block, variation selectors (and their
+ * supplement), zero-width and direction marks, bidi embeddings / overrides / isolates, word
+ * joiners, Mongolian vowel separator. (U+FEFF is left alone: Windows files often start with it.)
+ */
+export const HIDDEN_CHAR_RANGES: readonly string[] = [
+  String.raw`\u{E0000}-\u{E007F}`,
+  String.raw`\u{FE00}-\u{FE0F}`,
+  String.raw`\u{E0100}-\u{E01EF}`,
+  String.raw`\u{200B}-\u{200F}`,
+  String.raw`\u{202A}-\u{202E}`,
+  String.raw`\u{2060}-\u{2064}`,
+  String.raw`\u{2066}-\u{2069}`,
+  String.raw`\u{180E}`,
+];
+
+/** Tools from TrueForge itself (not third-party servers): seeing them never marks a turn as tainted. */
+export const TRUEFORGE_INTERNAL_TOOLS: readonly string[] = ["ask_user_question", "list_tools", "get_tool_info", "load_tools", "create_sub_agent"];
+
+/** Tools whose results come from outside the project (web, past sessions): they taint the turn. */
+export const UNTRUSTED_SOURCE_TOOLS: readonly string[] = ["web_search", "web_fetch", "read_past_session"];
+
+/** A saved summary matching any of these is refused (safety/memory-write.ts): it would act as an instruction later. */
+export const SUMMARY_INSTRUCTION_PATTERNS: readonly { pattern: string; reason: string }[] = [
+  { pattern: String.raw`https?://|www\.`, reason: "it contains a link" },
+  { pattern: String.raw`\b(curl|wget|iwr|irm|Invoke-WebRequest|Invoke-Expression|iex|powershell|bash\s+-c|sh\s+-c|rm\s+-rf|git\s+push|base64)\b`, reason: "it contains a command" },
+  { pattern: String.raw`\b(ignore|disregard|forget)\b.{0,40}\b(instructions?|rules?|previous|above)\b`, reason: "it tells an agent to ignore its rules" },
+  { pattern: String.raw`\bfrom now on\b|\bnext time\b|\bin (future|later) (chats|sessions|tasks)\b`, reason: "it gives orders for later tasks" },
+  { pattern: String.raw`\b(you|the agent|assistant|future agents?|moon)\s+(must|should|need to|has to|have to|will)\b`, reason: "it gives an agent orders" },
+  { pattern: String.raw`\b(always|never)\s+(run|call|execute|send|allow|approve|skip|use|read|trust)\b`, reason: "it gives an agent a standing order" },
+  { pattern: String.raw`\bwithout\s+(asking|approval|review|confirmation)\b`, reason: "it asks to skip approval" },
+];
+
+/** Random bytes in the MCP server's per-start token (hex: twice as many characters). */
+export const MCP_TOKEN_BYTES = 32;
+
+/** Folder in the extension's storage that holds the security log (one file per day). */
+export const SECURITY_LOG_DIR = "security-log";
+
+/** The link confirmation shows at most this much of the address. */
+export const LINK_PREVIEW_CHARS = 300;
