@@ -134,6 +134,13 @@ export function flag(name: string): string | true | undefined {
   return next && !next.startsWith("--") ? next : true;
 }
 
+/** The model an eval runs on: --model main (default) or --model backup. */
+export function evalModel(config: MoonConfig): string {
+  const which = flag("model");
+  if (which !== undefined && which !== "main" && which !== "backup") throw new Error("--model must be main or backup");
+  return modelRef(which === "backup" ? config.models.backup : config.models.main);
+}
+
 /** Moon's side of a live eval: its MCP server registered in TrueForge, serving one run at a time. */
 export interface Live {
   config: MoonConfig;

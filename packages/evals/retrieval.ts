@@ -8,7 +8,7 @@
 //    Approvals asked before that are denied, so nothing runs and nothing is applied.
 // Scored: how many "must" files were chosen, which were missed, and which extras were added.
 //
-// Usage (from packages/evals): pnpm retrieval [--map-only] [--only <scenario id>] [--trace]
+// Usage (from packages/evals): pnpm retrieval [--model main|backup] [--map-only] [--only <scenario id>] [--trace]
 // --trace prints every event of the agent runs (to see what the agent and its scout did).
 
 import { readFileSync } from "node:fs";
@@ -26,7 +26,7 @@ import {
   type MoonConfig,
   type MoonEvent,
 } from "@moon/core";
-import { EVALS_DIR, flag, freshCheckout, loadConfig, saveResults, startLive, treeSitterPaths, type Live } from "./runner";
+import { EVALS_DIR, evalModel, flag, freshCheckout, loadConfig, saveResults, startLive, treeSitterPaths, type Live } from "./runner";
 import { ranksOf, recallAt, scoreRetrieval, type RetrievalScore } from "./scorers";
 
 interface Scenario {
@@ -80,7 +80,7 @@ async function main(): Promise<void> {
   console.log(`Fresh ${file.repo} at ${checkout.commit}: ${checkout.root}`);
 
   const client = new TrueForgeClient(config.trueforge);
-  const model = modelRef(config.models.main);
+  const model = evalModel(config);
   const windowTokens = (await client.listModels()).find((m) => m.ref === model)?.contextLength ?? config.context.fallbackContextLength;
   const reader = await TagReader.create(treeSitterPaths());
 
@@ -135,7 +135,7 @@ async function runAgent(live: Live, root: string, scenario: Scenario, windowToke
   const { config } = live;
   const run = await AgentRun.create({ projectRoot: root, config, applyApproved: async () => DENY_REASON });
   live.setRun(run);
-  const chat = live.newChat();
+  const chat = live.newChat(evalModel(config));
   const readText = (rel: string) => {
     try {
       return readFileSync(path.join(root, rel), "utf8");
