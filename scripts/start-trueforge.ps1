@@ -35,8 +35,11 @@ if ($current -lt $required) {
   exit 1
 }
 
-$config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
-$tf = $config.trueforge
+# Node reads the file: Windows PowerShell 5.1's ConvertFrom-Json rejects keys that differ only
+# by case, and security.networkBlockEnv needs both HTTP_PROXY and http_proxy.
+$tfJson = node -e "console.log(JSON.stringify(JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).trueforge))" $ConfigPath
+if ($LASTEXITCODE -ne 0) { exit 1 }
+$tf = $tfJson | ConvertFrom-Json
 
 # Local hosts from config/moon.json + the hosts of our provider endpoints (config/trueforge.json + .env).
 $allowed = node (Join-Path $PSScriptRoot "lib/allowed-hosts.mjs")
