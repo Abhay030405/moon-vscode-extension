@@ -161,7 +161,7 @@ async function runScenario(scenario: Scenario, env: Env): Promise<ScenarioResult
       mcpServer: endpointNames(config.mcp).editor,
       baseUrl: config.trueforge.baseUrl,
       sessionUrlTemplate: config.trueforge.sessionUrlTemplate,
-      watchdog: { firstReplyMs: config.resilience.watchdogMs, stallMs: config.resilience.stallMs },
+      watchdog: { firstReplyMs: config.resilience.watchdogMs, stallMs: config.resilience.stallMs, firstReplyKnownMs: config.resilience.firstReplyKnownMs },
     });
   const router = new ModelRouter({ main, backup }, config.resilience.circuitBreaker, (model) => probeModel(makeChat(model)));
   try {

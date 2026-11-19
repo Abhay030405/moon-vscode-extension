@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Moon: a VS Code coding agent on TrueForge</title>
+<style>
+  @page { size: A4; margin: 11mm 14mm 10mm 14mm; }
+  :root {
+    --ink: #1d1d1f; --muted: #555; --rule: #c9ced6; --link: #1f5fae;
+    --blue: #4a7fc1; --blue-bg: #eaf1fb; --amber: #c98a2b; --amber-bg: #fff4e2;
+    --green: #4f9a5f; --green-bg: #eaf6ec; --grey: #8a8f98;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: var(--ink); background: #fff;
+         font-family: Charter, "Bitstream Charter", Cambria, Georgia, serif;
+         font-size: 9.25pt; line-height: 1.31; text-align: justify; hyphens: auto; }
+  a { color: var(--link); text-decoration: none; }
+  code { font-family: Consolas, Menlo, monospace; font-size: 8.3pt; }
+  h1 { font-family: Cambria, Georgia, serif; font-size: 16.5pt; margin: 0 0 3pt; text-align: center; }
+  .sub { text-align: center; color: var(--muted); font-size: 8.8pt; margin: 0; }
+  .team { text-align: center; font-size: 9.4pt; margin: 2pt 0 4pt; }
+  .links { text-align: center; font-size: 8.5pt; border-top: 0.6pt solid var(--rule);
+           border-bottom: 0.6pt solid var(--rule); padding: 3pt 0; margin-bottom: 6pt; }
+  h2 { font-family: Arial, Helvetica, sans-serif; font-size: 11.2pt; margin: 8pt 0 2.5pt; }
+  p { margin: 0 0 4pt; }
+  ul { margin: 1pt 0 4pt; padding-left: 13pt; }
+  li { margin-bottom: 1.2pt; }
+  table { border-collapse: collapse; width: 100%; font-size: 8.4pt; line-height: 1.28;
+          margin: 3pt 0 5pt; text-align: left; }
+  th { font-family: Arial, Helvetica, sans-serif; font-size: 8pt; background: #eef1f5;
+       border-bottom: 0.8pt solid #9aa3ad; padding: 2.2pt 4pt; }
+  td { border-bottom: 0.5pt solid #dde1e6; padding: 2pt 4pt; vertical-align: top; }
+  figure { margin: 4pt 0 6pt; break-inside: avoid; }
+  figure svg { width: 100%; height: auto; display: block; }
+  figcaption { font-size: 8.2pt; text-align: center; color: #333; margin-top: 2pt; }
+  figcaption b { font-family: Arial, Helvetica, sans-serif; }
+  .fill { background: #fff2a8; padding: 0 2pt; }
+  .tight td { padding: 1.6pt 4pt; }
+  .nb { break-inside: avoid; }
+  /* svg text */
+  svg text { font-family: Arial, Helvetica, sans-serif; fill: #1d1d1f; }
+  svg .t { font-size: 9px; font-weight: 700; }
+  svg .s { font-size: 7.7px; fill: #333; }
+  svg .l { font-size: 7.4px; fill: #444; }
+  svg .h { font-size: 10px; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<h1>Moon: a VS Code coding agent whose loop runs on TrueForge</h1>
+<p class="sub">Technical Abstract · TrueFoundry Forge-a-thon, Techfest 2026-27, IIT Bombay · Round 1 write-up</p>
+<p class="team">Team <b>Simpletons</b> (ID TM-EE7CC39ADE6) · Ayush Jadaun (lead), Abhay Agarwal, Akshay Yadav, Arnav Raj</p>
+<p class="links">Repository: <a href="https://github.com/Abhay030405/moon-vscode-extension">https://github.com/Abhay030405/moon-vscode-extension</a> · Demo video: <a href="https://drive.google.com/drive/folders/1klRLMvFVaTXSP2Og9qvL90D1nblI30bf">Google Drive folder</a></p>
+
+<p><b>Overview.</b> Moon is a VS Code extension that turns one plain-language request into a reviewed, multi-file change. TrueForge runs the agent loop and is the only part of the system that talks to a model. Moon gives the agent its eyes and hands as MCP tools, decides what goes into the model's context, and keeps the user's files untouched until the user accepts each hunk. The agent edits a hidden copy of the project and runs the tests there. Every change then comes back through a TrueForge tool approval that opens Moon's review screen. If the main model fails, Moon restarts the same request on a backup model with no click from the user.</p>
+
+<h2>1&nbsp; Team</h2>
+<p>All four members are students at <b>MNNIT Allahabad</b>. Ayush Jadaun, team lead (GitHub <code>ayush-jadaun</code>); Abhay Agarwal (<code>Abhay030405</code>); Akshay Yadav (<code>MNNITAK</code>); Arnav Raj (<code>arnavraj-7</code>).</p>
+
+<h2>2&nbsp; Starting point</h2>
+<p><b>From scratch.</b> The first commit is <code>6bda597</code> (6 Nov 2026, "Project skeleton, docs and agent rules"). Moon is not a fork, and no upstream agent loop is kept. Forking Cline or Roo would have meant untangling their own loop and replacing most of their flow, and a small codebase is one we can explain line by line. We copied three tree-sitter tag query files from Aider (Apache-2.0, adapted from the MIT tree-sitter grammars) and took two ideas without code: Aider's ranked repo map and Continue's per-hunk Accept/Reject buttons. Each one is listed with source, link and licence in <code>NOTICE.md</code>.</p>
+
+<h2>3&nbsp; Architecture on TrueForge</h2>
+<p>Moon is a pnpm monorepo with three packages (Fig. 1). <code>packages/core</code> holds all logic and never imports <code>vscode</code>, so its 154 unit tests and the evals run without an editor. <code>packages/extension</code> is a thin layer that wires VS Code to core, and <code>packages/webview-ui</code> is the React panel. TrueForge 0.184.2 runs in local mode on the same machine.</p>
+
+<figure>
+<svg viewBox="0 0 680 352" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker>
+  </defs>
+  <!-- VS Code container -->
+  <rect x="6" y="6" width="336" height="284" rx="6" fill="#f7f9fc" stroke="#9fb3cf"/>
+  <text x="16" y="21" class="h">VS Code: the Moon extension</text>
+  <!-- row 1 -->
+  <rect x="16" y="30" width="156" height="44" rx="4" fill="#fff" stroke="#4a7fc1"/>
+  <text x="94" y="43" class="t" text-anchor="middle">Moon panel (React webview)</text>
+  <text x="94" y="55" class="s" text-anchor="middle">streamed answer, live tool log,</text>
+  <text x="94" y="65" class="s" text-anchor="middle">context card, approvals, review</text>
+  <rect x="180" y="30" width="152" height="44" rx="4" fill="#fff" stroke="#4a7fc1"/>
+  <text x="256" y="43" class="t" text-anchor="middle">Editor (inline edit)</text>
+  <text x="256" y="55" class="s" text-anchor="middle">diff preview in the file with</text>
+  <text x="256" y="65" class="s" text-anchor="middle">Accept / Reject on each hunk</text>
+  <line x1="94" y1="74" x2="94" y2="84" stroke="#555" marker-start="url(#a)" marker-end="url(#a)"/>
+  <line x1="256" y1="74" x2="256" y2="84" stroke="#555" marker-start="url(#a)" marker-end="url(#a)"/>
+  <!-- row 2 -->
+  <rect x="16" y="84" width="316" height="30" rx="4" fill="#fff" stroke="#4a7fc1"/>
+  <text x="174" y="96" class="t" text-anchor="middle">Extension host (thin VS Code layer)</text>
+  <text x="174" y="108" class="s" text-anchor="middle">controllers for inline edit, agent run, review, undo and the status bar</text>
+  <line x1="174" y1="114" x2="174" y2="124" stroke="#555" marker-start="url(#a)" marker-end="url(#a)"/>
+  <!-- core -->
+  <rect x="16" y="124" width="316" height="104" rx="4" fill="#eaf1fb" stroke="#4a7fc1"/>
+  <text x="174" y="137" class="t" text-anchor="middle">Moon core (TypeScript, never imports vscode)</text>
+  <g>
+    <rect x="24" y="143" width="96" height="36" rx="3" fill="#fff" stroke="#9fb3cf"/>
+    <text x="72" y="157" class="t" text-anchor="middle" style="font-size:8px">TrueForge client</text>
+    <text x="72" y="169" class="s" text-anchor="middle">sessions, turns, events</text>
+    <rect x="126" y="143" width="96" height="36" rx="3" fill="#fff" stroke="#9fb3cf"/>
+    <text x="174" y="157" class="t" text-anchor="middle" style="font-size:8px">Model router</text>
+    <text x="174" y="169" class="s" text-anchor="middle">watchdog, circuit breaker</text>
+    <rect x="228" y="143" width="96" height="36" rx="3" fill="#fff" stroke="#9fb3cf"/>
+    <text x="276" y="157" class="t" text-anchor="middle" style="font-size:8px">Project map</text>
+    <text x="276" y="169" class="s" text-anchor="middle">tree-sitter, PageRank, budget</text>
+    <rect x="24" y="185" width="96" height="36" rx="3" fill="#fff" stroke="#9fb3cf"/>
+    <text x="72" y="199" class="t" text-anchor="middle" style="font-size:8px">Hidden copy</text>
+    <text x="72" y="211" class="s" text-anchor="middle">hunks, apply, undo</text>
+    <rect x="126" y="185" width="96" height="36" rx="3" fill="#fff" stroke="#9fb3cf"/>
+    <text x="174" y="199" class="t" text-anchor="middle" style="font-size:8px">Verification</text>
+    <text x="174" y="211" class="s" text-anchor="middle">test records, impact check</text>
+    <rect x="228" y="185" width="96" height="36" rx="3" fill="#fff" stroke="#9fb3cf"/>
+    <text x="276" y="199" class="t" text-anchor="middle" style="font-size:8px">Safety</text>
+    <text x="276" y="211" class="s" text-anchor="middle">path, secret, command guards</text>
+  </g>
+  <line x1="174" y1="228" x2="174" y2="238" stroke="#555" marker-start="url(#a)" marker-end="url(#a)"/>
+  <!-- MCP server -->
+  <rect x="16" y="238" width="316" height="44" rx="4" fill="#fff" stroke="#4a7fc1" stroke-width="1.4"/>
+  <text x="174" y="251" class="t" text-anchor="middle">Moon MCP server on 127.0.0.1 (new token each start)</text>
+  <text x="174" y="263" class="s" text-anchor="middle">inline endpoint: the open file, look-up tools + propose_edit</text>
+  <text x="174" y="274" class="s" text-anchor="middle">agent endpoint: the hidden copy, all 17 agent tools</text>
+  <!-- disks -->
+  <line x1="92" y1="282" x2="92" y2="308" stroke="#555" marker-end="url(#a)"/>
+  <text x="97" y="300" class="l">edit_file, run_command</text>
+  <line x1="256" y1="282" x2="256" y2="308" stroke="#555" marker-end="url(#a)"/>
+  <text x="261" y="300" class="l">accepted hunks only</text>
+  <rect x="16" y="308" width="152" height="38" rx="4" fill="#f2f3f5" stroke="#8a8f98" stroke-dasharray="4 3"/>
+  <text x="92" y="323" class="t" text-anchor="middle">Hidden copy</text>
+  <text x="92" y="336" class="s" text-anchor="middle">system temp folder, deleted on Stop</text>
+  <rect x="180" y="308" width="152" height="38" rx="4" fill="#f2f3f5" stroke="#8a8f98"/>
+  <text x="256" y="323" class="t" text-anchor="middle">Your workspace</text>
+  <text x="256" y="336" class="s" text-anchor="middle">real files, changed only by Apply</text>
+  <!-- TrueForge -->
+  <rect x="402" y="58" width="134" height="208" rx="6" fill="#fff4e2" stroke="#c98a2b" stroke-width="1.4"/>
+  <text x="469" y="76" class="h" text-anchor="middle">TrueForge 0.184.2</text>
+  <text x="469" y="89" class="s" text-anchor="middle">local mode, port 8790</text>
+  <g class="s">
+    <text x="412" y="110">• agent loop (moon-agent.json)</text>
+    <text x="412" y="125">• tool approval pauses</text>
+    <text x="412" y="140">• scout as a dynamic subagent</text>
+    <text x="412" y="155">• compaction at 80% of window</text>
+    <text x="412" y="170">• deferred tool loading</text>
+    <text x="412" y="185">• ask_user_question card</text>
+    <text x="412" y="200">• sessions stored in SQLite</text>
+    <text x="412" y="215">• its own retries (2) and</text>
+    <text x="419" y="226">timeouts for model calls</text>
+  </g>
+  <!-- core <-> TF -->
+  <line x1="342" y1="150" x2="402" y2="150" stroke="#555" marker-end="url(#a)"/>
+  <text x="372" y="138" class="l" text-anchor="middle">sessions +</text>
+  <text x="372" y="146" class="l" text-anchor="middle">turns (SDK)</text>
+  <line x1="402" y1="168" x2="342" y2="168" stroke="#555" marker-end="url(#a)"/>
+  <text x="372" y="178" class="l" text-anchor="middle">event</text>
+  <text x="372" y="186" class="l" text-anchor="middle">stream</text>
+  <!-- TF -> MCP -->
+  <polyline points="440,266 440,258 342,258" fill="none" stroke="#555" marker-end="url(#a)"/>
+  <text x="392" y="252" class="l" text-anchor="middle">MCP tool calls</text>
+  <!-- models -->
+  <rect x="574" y="70" width="100" height="50" rx="4" fill="#eaf6ec" stroke="#4f9a5f"/>
+  <text x="624" y="84" class="t" text-anchor="middle">Main model</text>
+  <text x="624" y="97" class="s" text-anchor="middle">Claude Sonnet 5.5</text>
+  <text x="624" y="108" class="s" text-anchor="middle">Anthropic API</text>
+  <rect x="574" y="146" width="100" height="62" rx="4" fill="#eaf6ec" stroke="#4f9a5f" stroke-dasharray="4 3"/>
+  <text x="624" y="160" class="t" text-anchor="middle">Backup model</text>
+  <text x="624" y="173" class="s" text-anchor="middle">DeepSeek V4.1 Flash</text>
+  <text x="624" y="185" class="s" text-anchor="middle">Azure AI Foundry</text>
+  <text x="624" y="196" class="s" text-anchor="middle">(OpenAI-compatible)</text>
+  <line x1="536" y1="95" x2="574" y2="95" stroke="#555" marker-end="url(#a)"/>
+  <line x1="536" y1="177" x2="574" y2="177" stroke="#555" stroke-dasharray="3 2" marker-end="url(#a)"/>
+  <text x="624" y="226" class="l" text-anchor="middle" font-style="italic">only TrueForge</text>
+  <text x="624" y="235" class="l" text-anchor="middle" font-style="italic">calls a model</text>
+  <!-- note -->
+  <rect x="402" y="282" width="272" height="64" rx="4" fill="#fff" stroke="#c9ced6"/>
+  <text x="412" y="297" class="t" style="font-size:8.2px">Fallback without user action</text>
+  <text x="412" y="310" class="s">The model router sees the failed turn (or 12 s of silence)</text>
+  <text x="412" y="321" class="s">and starts the same request on a new TrueForge session</text>
+  <text x="412" y="332" class="s">whose agent uses the backup model. The failed attempt's</text>
+  <text x="412" y="343" class="s">copy and proposal are thrown away first.</text>
+</svg>
+<figcaption><b>Fig. 1.</b> System architecture with the real component names. Solid arrows are calls that happen on every run; dashed boxes and arrows are the backup path and the throw-away copy.</figcaption>
+</figure>
+
+<p><b>How Moon talks to TrueForge.</b> Moon uses the TypeScript SDK. Each chat creates a session from an inline agent spec built from <code>agents/moon-agent.json</code>, with the model name filled in from config. Moon sends turns and reads the event stream: text deltas, tool calls, tool results, approval requests and the turn's end state. Text deltas stream to the panel and each tool call becomes one live-log line, without blocking the editor. TrueForge cannot tell a tool which session called it, so Moon serves two MCP endpoints. The inline endpoint works on the open file. The agent endpoint works on the current run's hidden copy.</p>
+
+<p><b>Editor capabilities as MCP tools.</b> The agent decides what to read and change; Moon only offers the tools and enforces their limits.</p>
+<table class="tight">
+  <tr><th style="width:24%">Group</th><th>Tools</th><th style="width:28%">Pauses for the user?</th></tr>
+  <tr><td>Looking around</td><td><code>list_files, search_text, find_definition, find_usages, read_file, get_errors</code></td><td>No (capped output)</td></tr>
+  <tr><td>Changing the hidden copy</td><td><code>edit_file, list_pending_changes</code></td><td>No (real files untouched)</td></tr>
+  <tr><td>Acting on the real project</td><td><code>run_command, apply_changes, undo_applied_run</code></td><td>Yes, TrueForge tool approval</td></tr>
+  <tr><td>Planning and memory</td><td><code>report_context, propose_plan, work_log, save_summary, list_past_sessions, read_past_session</code></td><td><code>propose_plan</code> and <code>read_past_session</code> pause</td></tr>
+  <tr><td>Inline edit only</td><td><code>propose_edit</code> (hands the change back, never writes)</td><td>No; review happens in the editor</td></tr>
+</table>
+
+<p><b>TrueForge approval drives the review.</b> <code>apply_changes</code> is in the agent's <code>requireApprovalForTools</code> list. When TrueForge emits <code>tool.approval_required</code> for it, Moon opens the review screen: files, then hunks, with Accept all, per file and per hunk. TrueForge's answer can only be allow or deny, so Moon keeps the user's hunk choices and sends allow. The tool, running in the extension, then writes only the accepted hunks in one all-or-nothing edit with a backup. If the user rejects everything, Moon sends deny with a reason that lists the rejected hunks, and the agent reads that reason. <code>run_command</code> works the same way through an approval card (Allow once, Always for this exact command in this run, Deny).</p>
+
+<p><b>Inline edit (Task A).</b> Ctrl+I opens an instruction box under the selection. A separate agent spec (<code>moon-inline.json</code>) runs with five tools and an 8-step limit, and ends by calling <code>propose_edit</code>. Moon draws each change in the file, green new lines under red old lines, with Accept and Reject buttons above each hunk. The preview exists only in the unsaved editor text, so Stop removes it and Ctrl+Z undoes an accepted edit.</p>
+
+<p><b>Harness features we use.</b> The scout is a TrueForge dynamic subagent that searches in its own thread and returns at most six files with a reason each, which keeps the main agent's context small. Compaction triggers at 80% of the model's window, the same window number that sets the map budget. Deferred tool loading is on, with eight tools preloaded. <code>ask_user_question</code> drives the card shown after two failed fix attempts. The loop limit is 60 steps for agent mode. Code Mode and skills are not used because they need TrueForge's sandbox, which does not run on Windows, our development machine.</p>
+
+<figure>
+<svg viewBox="0 0 680 212" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker>
+  </defs>
+  <!-- row 1 -->
+  <rect x="6" y="8" width="152" height="50" rx="4" fill="#eaf1fb" stroke="#4a7fc1"/>
+  <text x="82" y="23" class="t" text-anchor="middle">1  Request</text>
+  <text x="82" y="36" class="s" text-anchor="middle">typed in the Moon panel,</text>
+  <text x="82" y="47" class="s" text-anchor="middle">no files named</text>
+  <rect x="180" y="8" width="152" height="50" rx="4" fill="#eaf1fb" stroke="#4a7fc1"/>
+  <text x="256" y="23" class="t" text-anchor="middle">2  Session start</text>
+  <text x="256" y="36" class="s" text-anchor="middle">hidden copy, project map and</text>
+  <text x="256" y="47" class="s" text-anchor="middle">AGENTS.md go into the session</text>
+  <rect x="354" y="8" width="152" height="50" rx="4" fill="#fff4e2" stroke="#c98a2b"/>
+  <text x="430" y="23" class="t" text-anchor="middle">3  Scout subagent</text>
+  <text x="430" y="36" class="s" text-anchor="middle">look-only tools in its own thread,</text>
+  <text x="430" y="47" class="s" text-anchor="middle">returns up to 6 files + reasons</text>
+  <rect x="528" y="8" width="146" height="50" rx="4" fill="#eaf1fb" stroke="#4a7fc1"/>
+  <text x="601" y="23" class="t" text-anchor="middle">4  report_context</text>
+  <text x="601" y="36" class="s" text-anchor="middle">context card: files, reasons,</text>
+  <text x="601" y="47" class="s" text-anchor="middle">similar code, budget bar</text>
+  <line x1="158" y1="33" x2="180" y2="33" stroke="#555" marker-end="url(#b)"/>
+  <line x1="332" y1="33" x2="354" y2="33" stroke="#555" marker-end="url(#b)"/>
+  <line x1="506" y1="33" x2="528" y2="33" stroke="#555" marker-end="url(#b)"/>
+  <line x1="601" y1="58" x2="601" y2="86" stroke="#555" marker-end="url(#b)"/>
+  <!-- row 2 (right to left) -->
+  <rect x="528" y="86" width="146" height="50" rx="4" fill="#eaf1fb" stroke="#4a7fc1"/>
+  <text x="601" y="101" class="t" text-anchor="middle">5  edit_file</text>
+  <text x="601" y="114" class="s" text-anchor="middle">code, test and docs edits</text>
+  <text x="601" y="125" class="s" text-anchor="middle">land in the copy, no pause</text>
+  <rect x="354" y="86" width="152" height="50" rx="4" fill="#fff4e2" stroke="#c98a2b" stroke-width="1.4"/>
+  <text x="430" y="101" class="t" text-anchor="middle">6  run_command</text>
+  <text x="430" y="114" class="s" text-anchor="middle">approval card, then pytest in</text>
+  <text x="430" y="125" class="s" text-anchor="middle">the copy; Moon logs exit codes</text>
+  <rect x="180" y="86" width="152" height="50" rx="4" fill="#fff4e2" stroke="#c98a2b" stroke-width="1.4"/>
+  <text x="256" y="101" class="t" text-anchor="middle">7  apply_changes</text>
+  <text x="256" y="114" class="s" text-anchor="middle">TrueForge approval opens review:</text>
+  <text x="256" y="125" class="s" text-anchor="middle">hunks, test result, impact warnings</text>
+  <rect x="6" y="86" width="152" height="50" rx="4" fill="#f2f3f5" stroke="#8a8f98"/>
+  <text x="82" y="101" class="t" text-anchor="middle">8  Apply, then Undo</text>
+  <text x="82" y="114" class="s" text-anchor="middle">accepted hunks only, with backup;</text>
+  <text x="82" y="125" class="s" text-anchor="middle">"Undo this whole run" restores</text>
+  <line x1="528" y1="111" x2="506" y2="111" stroke="#555" marker-end="url(#b)"/>
+  <line x1="354" y1="111" x2="332" y2="111" stroke="#555" marker-end="url(#b)"/>
+  <line x1="180" y1="111" x2="158" y2="111" stroke="#555" marker-end="url(#b)"/>
+  <!-- loop back from 6 to 5 -->
+  <path d="M440,86 C440,66 591,66 591,84" fill="none" stroke="#999" stroke-dasharray="3 2" marker-end="url(#b)"/>
+  <text x="516" y="68" class="l" text-anchor="middle">tests fail: fix again (2 attempts, then ask)</text>
+  <!-- stop -->
+  <rect x="6" y="154" width="668" height="50" rx="4" fill="#fff" stroke="#b5544a" stroke-dasharray="5 3"/>
+  <text x="18" y="170" class="t">Stop, at any step</text>
+  <text x="18" y="183" class="s">1. kill the running command and every process it started   2. cancel the TrueForge turn   3. delete the hidden copy   4. show "Stopped".</text>
+  <text x="18" y="195" class="s">The real files were never written, so nothing is half-applied. Cancel eval: 6 of 6 moments clean on both models, Stop to cancelled in 0 to 29 ms.</text>
+</svg>
+<figcaption><b>Fig. 2.</b> One agent-mode request (Task B). Amber steps run inside TrueForge features (subagent, tool approval). Nothing reaches the workspace before step 8.</figcaption>
+</figure>
+
+<h2>4&nbsp; How context is selected</h2>
+<p>Flask 3.1.3 is about 17,000 lines, so the agent cannot read everything. Fig. 3 shows what Moon puts into the model's window, the budget for each part, and how the agent's file choices reach the screen. Every cap is a setting in <code>config/moon.json</code>.</p>
+
+<figure>
+<svg viewBox="0 0 680 246" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker>
+  </defs>
+  <text x="65" y="13" class="l" text-anchor="middle" font-weight="700">INPUTS</text>
+  <text x="252" y="13" class="l" text-anchor="middle" font-weight="700">MOON CORE BUILDS (NO MODEL CALL)</text>
+  <text x="463" y="13" class="l" text-anchor="middle" font-weight="700">MODEL WINDOW (ONE SESSION)</text>
+  <text x="620" y="13" class="l" text-anchor="middle" font-weight="700">AGENT PICKS, MOON SHOWS</text>
+  <!-- inputs -->
+  <rect x="6" y="22" width="118" height="32" rx="4" fill="#fff" stroke="#8a8f98"/>
+  <text x="65" y="35" class="t" text-anchor="middle" style="font-size:8.2px">AGENTS.md / CLAUDE.md</text>
+  <text x="65" y="47" class="s" text-anchor="middle">read if present, never written</text>
+  <rect x="6" y="62" width="118" height="32" rx="4" fill="#fff" stroke="#8a8f98"/>
+  <text x="65" y="75" class="t" text-anchor="middle" style="font-size:8.2px">User request</text>
+  <text x="65" y="87" class="s" text-anchor="middle">words weighted by rarity</text>
+  <rect x="6" y="100" width="118" height="32" rx="4" fill="#fff" stroke="#8a8f98"/>
+  <text x="65" y="113" class="t" text-anchor="middle" style="font-size:8.2px">Project files</text>
+  <text x="65" y="125" class="s" text-anchor="middle">tree-sitter tags, cached</text>
+  <rect x="6" y="146" width="118" height="42" rx="4" fill="#fff" stroke="#8a8f98"/>
+  <text x="65" y="160" class="t" text-anchor="middle" style="font-size:8.2px">@file, @symbol</text>
+  <text x="65" y="172" class="s" text-anchor="middle">picked in the panel; the picker</text>
+  <text x="65" y="182" class="s" text-anchor="middle">tells same-named symbols apart</text>
+  <!-- core -->
+  <rect x="146" y="22" width="212" height="32" rx="4" fill="#eaf1fb" stroke="#4a7fc1"/>
+  <text x="252" y="35" class="t" text-anchor="middle">Project rules</text>
+  <text x="252" y="47" class="s" text-anchor="middle">up to 2k tokens; guidance, never permission</text>
+  <rect x="146" y="62" width="212" height="76" rx="4" fill="#eaf1fb" stroke="#4a7fc1" stroke-width="1.4"/>
+  <text x="252" y="75" class="t" text-anchor="middle">Project map (ranked, budgeted)</text>
+  <text x="156" y="89" class="s">1. graph: file A uses a name defined in file B</text>
+  <text x="156" y="100" class="s">2. PageRank, start rank on files matching the request</text>
+  <text x="156" y="111" class="s">3. exact names (get_debug_flag) count most</text>
+  <text x="156" y="122" class="s">4. pack: 10% of window, kept within 1k to 8k tokens</text>
+  <text x="156" y="133" class="s">5. re-parse only changed files; cache outside the project</text>
+  <rect x="146" y="146" width="212" height="42" rx="4" fill="#eaf1fb" stroke="#4a7fc1"/>
+  <text x="252" y="160" class="t" text-anchor="middle">Mentions</text>
+  <text x="252" y="172" class="s" text-anchor="middle">a file whole up to 6k tokens, else its outline</text>
+  <text x="252" y="182" class="s" text-anchor="middle">a symbol's definition up to 120 lines</text>
+  <rect x="6" y="200" width="352" height="38" rx="4" fill="#fff" stroke="#b5544a" stroke-dasharray="4 3"/>
+  <text x="182" y="214" class="t" text-anchor="middle" style="font-size:8.2px">Safety filter on every input and every tool result</text>
+  <text x="182" y="227" class="s" text-anchor="middle">secrets redacted, hidden characters shown, file text marked as data, .env never read</text>
+  <!-- input -> core arrows -->
+  <line x1="124" y1="38" x2="146" y2="38" stroke="#555" marker-end="url(#c)"/>
+  <line x1="124" y1="78" x2="146" y2="78" stroke="#555" marker-end="url(#c)"/>
+  <line x1="124" y1="116" x2="146" y2="116" stroke="#555" marker-end="url(#c)"/>
+  <line x1="124" y1="167" x2="146" y2="167" stroke="#555" marker-end="url(#c)"/>
+  <!-- window -->
+  <rect x="388" y="22" width="150" height="216" rx="3" fill="#fbfbfc" stroke="#4d5560" stroke-width="1.3"/>
+  <rect x="388" y="22" width="150" height="20" fill="#e6e8eb" stroke="#4d5560" stroke-width="0.6"/>
+  <text x="463" y="35" class="s" text-anchor="middle">agent instructions + safety rules</text>
+  <rect x="388" y="42" width="150" height="22" fill="#eaf1fb" stroke="#4d5560" stroke-width="0.6"/>
+  <text x="463" y="56" class="s" text-anchor="middle">opening message: project rules</text>
+  <rect x="388" y="64" width="150" height="40" fill="#d3e2f6" stroke="#4d5560" stroke-width="0.6"/>
+  <text x="463" y="80" class="t" text-anchor="middle" style="font-size:8.2px">opening message: project map</text>
+  <text x="463" y="93" class="s" text-anchor="middle">10% of the window (1k to 8k)</text>
+  <rect x="388" y="104" width="150" height="28" fill="#eaf1fb" stroke="#4d5560" stroke-width="0.6"/>
+  <text x="463" y="116" class="s" text-anchor="middle">user turn: request + @mentions</text>
+  <text x="463" y="126" class="s" text-anchor="middle">(mentions up to 6k)</text>
+  <rect x="388" y="132" width="150" height="62" fill="#fff" stroke="#4d5560" stroke-width="0.6"/>
+  <text x="463" y="145" class="t" text-anchor="middle" style="font-size:8.2px">tool results and replies</text>
+  <text x="463" y="157" class="s" text-anchor="middle">read_file: 400 lines per call</text>
+  <text x="463" y="168" class="s" text-anchor="middle">search: 50 hits per call</text>
+  <text x="463" y="179" class="s" text-anchor="middle">command output: 12k characters</text>
+  <line x1="388" y1="194" x2="538" y2="194" stroke="#c98a2b" stroke-width="1.4" stroke-dasharray="5 3"/>
+  <text x="463" y="205" class="l" text-anchor="middle" style="fill:#9a6418" font-weight="700">TrueForge compaction at 80%</text>
+  <text x="463" y="219" class="l" text-anchor="middle">window size: TrueForge contextLength,</text>
+  <text x="463" y="229" class="l" text-anchor="middle">or 50k tokens when unknown</text>
+  <!-- core -> window arrows -->
+  <line x1="358" y1="38" x2="388" y2="53" stroke="#555" marker-end="url(#c)"/>
+  <line x1="358" y1="96" x2="388" y2="84" stroke="#555" marker-end="url(#c)"/>
+  <line x1="358" y1="167" x2="388" y2="120" stroke="#555" marker-end="url(#c)"/>
+  <!-- agent side -->
+  <rect x="566" y="22" width="108" height="62" rx="4" fill="#fff4e2" stroke="#c98a2b" stroke-width="1.3"/>
+  <text x="620" y="35" class="t" text-anchor="middle">Scout subagent</text>
+  <text x="620" y="48" class="s" text-anchor="middle">own thread, look-only</text>
+  <text x="620" y="58" class="s" text-anchor="middle">tools; returns up to 6</text>
+  <text x="620" y="68" class="s" text-anchor="middle">files with a reason each</text>
+  <text x="620" y="78" class="s" text-anchor="middle">+ "Similar:" code to copy</text>
+  <rect x="566" y="104" width="108" height="40" rx="4" fill="#eaf1fb" stroke="#4a7fc1"/>
+  <text x="620" y="117" class="t" text-anchor="middle">report_context</text>
+  <text x="620" y="129" class="s" text-anchor="middle">MCP tool; refuses files</text>
+  <text x="620" y="139" class="s" text-anchor="middle">that do not exist</text>
+  <rect x="566" y="164" width="108" height="56" rx="4" fill="#fff" stroke="#4a7fc1" stroke-width="1.3"/>
+  <text x="620" y="177" class="t" text-anchor="middle">Context card (panel)</text>
+  <text x="620" y="190" class="s" text-anchor="middle">files + one-line reasons,</text>
+  <text x="620" y="200" class="s" text-anchor="middle">similar code to copy,</text>
+  <text x="620" y="210" class="s" text-anchor="middle">budget bar "map 5.9k / 8k"</text>
+  <line x1="620" y1="144" x2="620" y2="164" stroke="#555" marker-end="url(#c)"/>
+  <line x1="538" y1="160" x2="566" y2="62" stroke="#555" marker-start="url(#c)" marker-end="url(#c)"/>
+  <line x1="538" y1="124" x2="566" y2="124" stroke="#555" marker-end="url(#c)"/>
+</svg>
+<figcaption><b>Fig. 3.</b> Context assembly. Moon builds the left half with no model call; the agent fills the rest of the window on demand through capped tools. The agent starts the scout, gets its report as a tool result, and passes the choices to <code>report_context</code>, so they appear on the context card in Task B.</figcaption>
+</figure>
+
+<p>Ranking follows Aider's repo-map idea, rewritten from scratch: tree-sitter (WebAssembly, no native build) reads definitions and references, and the PageRank start is tilted toward files that match the request. One window number sets both the map budget and TrueForge's compaction point, so the two never disagree. A large <code>@file</code> becomes an outline with a note to read the parts needed. We did not add embeddings: an embedding call from the extension would be a direct model call, and the index goes stale. On a held-out set of 10 Flask requests written after all tuning, the agent found <b>27 of 27</b> required files on both models. The map alone puts 66% of them in its top 10, and the scout closes the rest.</p>
+
+<h2>5&nbsp; Model setup</h2>
+<table class="tight">
+  <tr><th>Role</th><th>Model (TrueForge name)</th><th>Where it runs</th></tr>
+  <tr><td>Main</td><td>Claude Sonnet 5.5 (<code>anthropic/claude-sonnet-5-5</code>)</td><td>Anthropic API, TrueForge catalog provider</td></tr>
+  <tr><td>Backup</td><td>DeepSeek V4.1 Flash (<code>azure-deepseek/deepseek-v4-1-flash-2</code>)</td><td>Azure AI Foundry, TrueForge OpenAI-compatible provider (1,048,576-token window, 65,536 max output)</td></tr>
+</table>
+<p><b>Cost per task</b> (TrueForge usage events, list price per million input / output tokens: Claude $2 / $10, DeepSeek $0.30 / $1.20). <b>Task A:</b> Claude 24,121 in + 524 out, about <b>$0.05</b>; DeepSeek 17,104 in + 400 out, about <b>$0.006</b>. <b>Task B:</b> Claude 377,821 in + 7,838 out, about <b>$0.83</b>; DeepSeek 653,342 in + 7,431 out, about <b>$0.21</b>. <b>Task C:</b> Claude fails on the invalid key with no tokens used; DeepSeek finishes for 17,104 in + 400 out, about <b>$0.006</b>. Keys go in <code>.env</code> and <code>scripts/setup-providers</code> registers them in TrueForge; the extension never reads or sends a key. To switch models, change <code>models.main</code> and <code>models.backup</code> in <code>config/moon.json</code> to any model configured in TrueForge. No code changes. The prompts are model-neutral; retrieval, cancel and safety evals pass on both models.</p>
+<p><b>Fallback.</b> TrueForge errors carry the provider's status code in the text, for example <code>[Model Error] Request failed (401)</code>. Moon switches at once on 401, 403, 404, 5xx and "Cannot connect", retries a 429 twice, and switches when nothing streams back for 12 s. The same request then starts from the beginning on a new session with the backup model; Moon never stitches two half answers together. A circuit breaker probes the main model through TrueForge (after 30 s, doubling up to 10 min, and at once when its provider settings change) and moves back only between tasks. Measured: bad key switched in 0.46 s, dead address in 0.08 s, hanging server in 12 s, and <code>git status</code> was clean in all five scenarios.</p>
+
+<h2>6&nbsp; Scorecard</h2>
+<table class="tight">
+  <tr><th style="width:21%">Criterion</th><th style="width:9%">Video</th><th>Claim</th></tr>
+  <tr><td>A1 Inline edit</td><td>1:06</td><td>Diff in the editor, each hunk accepted on its own; <code>FLASK_DEBUG=off</code> prints <code>False</code>.</td></tr>
+  <tr><td>A2 Agent mode</td><td>1:38</td><td>Task B edits code, test and docs files that the agent found itself; Moon's pytest check on the CLI tests comes back <b>Verified</b> (11 passed), <code>flask --help</code> lists <code>config</code>.</td></tr>
+  <tr><td>A3 Streaming + cancel</td><td>0:52</td><td>Stop while it streams removes the preview at once; <code>git status</code> stays clean.</td></tr>
+  <tr><td>B1 Context assembly</td><td>2:01</td><td>Context card shows the scout's files, a reason for each and the map budget bar.</td></tr>
+  <tr><td>B2 Diff safety</td><td>2:10, 2:58</td><td>Per-hunk review before any write; "Undo this whole run" restores the files on screen.</td></tr>
+  <tr><td>B3 Resilience</td><td>3:10</td><td>Broken Claude key: DeepSeek takes over with no click; <code>git status</code> clean.</td></tr>
+  <tr><td>B4 TrueForge depth</td><td>2:45</td><td>TrueForge session view shows the scout subagent and all 17 MCP tool calls, ending in <code>apply_changes</code>, the approval tool that opens the review.</td></tr>
+  <tr><td>C1 Video</td><td>all</td><td>Tasks A, B and C in order, each followed by its check on screen.</td></tr>
+  <tr><td>C2 Write-up</td><td>n/a</td><td>This document: architecture, context budget, models and cost, trade-offs, limitations.</td></tr>
+</table>
+
+<h2>7&nbsp; Tools used</h2>
+<p>Claude Code (Anthropic) was our main AI coding assistant for code, tests and documentation. Moon is built with TypeScript, React 19, Vite 8, esbuild, Vitest, pnpm and the VS Code Extension API, on the TrueForge SDK 0.184. Libraries: web-tree-sitter and tree-sitter-wasms (MIT), react-markdown and remark-gfm (MIT), Inter and JetBrains Mono fonts (OFL). Flask 3.1.3 with pytest is the test bed. This abstract was written in HTML, printed to PDF with headless Chrome, and edited against the humanizer writing checklist (MIT).</p>
+
+<h2>8&nbsp; Known limitations and the next month</h2>
+<ul>
+  <li>Every eval ran on Windows 11. The macOS and Linux paths (process kill, temp folders) are written but not yet tested, and the clean-clone README test is still open.</li>
+  <li>Retrieval misses happen. On "make the log format configurable" the agent picked <code>docs/config.rst</code> instead of <code>docs/logging.rst</code> in 3 of 3 runs; we left the answer key unchanged.</li>
+  <li>Moon tells the agent to try a different approach after a failed attempt, but does not yet enforce it. Rolling back a failed attempt and blocking a repeated edit are designed but switched off, because <code>test_load_dotenv</code> fails in the copy (secret files are left out) and a rollback would discard a correct Task B change.</li>
+  <li>Undo backups for earlier runs live in memory, so a chat resumed from history cannot undo runs it applied before. If VS Code closes with a review open, the copy is deleted.</li>
+  <li>Command network blocking is a proxy setting, not an OS sandbox, and the secret scanner uses patterns and entropy only, since an ML classifier would need a model call.</li>
+  <li>Azure retires the DeepSeek V4.1 Flash preview on 15 Dec 2026; replacing it is a config change.</li>
+</ul>
+<p>With another month: run every eval on macOS and Linux, enforce rollback with a rule that counts only new test failures, keep undo backups with the session, add JS/TS and Go repos to the retrieval evals, and try Code Mode and skills where the sandbox runs.</p>
+
+</body>
+</html>

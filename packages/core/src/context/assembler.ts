@@ -111,6 +111,16 @@ export class ContextAssembler {
     return this.last?.root === root ? this.last.map.tags.get(rel) : undefined;
   }
 
+  /**
+   * For the impact check (section 13.1): every file's tags from the last map of this project,
+   * and a reader for changed texts. Undefined when no map was built (the check is then skipped).
+   */
+  async impactTags(root: string): Promise<{ projectTags: ReadonlyMap<string, FileTags>; readTags(rel: string, text: string): FileTags | undefined } | undefined> {
+    if (this.last?.root !== root || !this.reader) return undefined;
+    const reader = await this.reader;
+    return { projectTags: this.last.map.tags, readTags: (rel, text) => reader.read(rel, text) };
+  }
+
   private async buildMap(root: string, request: string, mentions: readonly Mention[], budgetTokens: number): Promise<ProjectMap> {
     this.reader ??= TagReader.create(this.paths);
     const reader = await this.reader;

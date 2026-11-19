@@ -2,6 +2,8 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import { AgentChat, type MoonEvent, type TrueForgeClient } from "../src/index.js";
 
+const SLOW_MS = 80;
+
 const DEFINITION = path.resolve(__dirname, "../../../agents/moon-agent.json");
 
 /**
@@ -30,8 +32,19 @@ function fakeTrueForge(refuse: string[] = []) {
       if (refuse.includes(body.previousTurnId)) throw new Error("previous turn is not finished");
       const turnId = `t${++next}`;
       const hang = body.input.some((i) => i.content === "hang");
+      // "slow": the model answers after SLOW_MS (a long think, a big file).
+      const slow = body.input.some((i) => i.content === "slow");
+      const quick = body.input.some((i) => i.content === "quick");
       return (async function* () {
         yield { type: "turn.created", turnId };
+        if (slow) {
+          await new Promise((resolve, reject) => {
+            const timer = setTimeout(resolve, SLOW_MS);
+            options.abortSignal.addEventListener("abort", () => (clearTimeout(timer), reject(new Error("aborted"))));
+          });
+          yield { type: "model.message", id: "m", threadId: "main", content: "done thinking", toolCalls: [] };
+        }
+        if (quick) yield { type: "model.message", id: "m", threadId: "main", content: "hi", toolCalls: [] };
         if (hang) {
           await new Promise((_, reject) => options.abortSignal.addEventListener("abort", () => reject(new Error("aborted"))));
         }
@@ -43,9 +56,10 @@ function fakeTrueForge(refuse: string[] = []) {
   return { client, opened, labels, updates, registrations: () => registered, register: async () => void registered++ };
 }
 
-function chatOn(client: TrueForgeClient, beforeTurn?: () => Promise<void>) {
+function chatOn(client: TrueForgeClient, beforeTurn?: () => Promise<void>, watchdog?: ConstructorParameters<typeof AgentChat>[0]["watchdog"]) {
   return new AgentChat({
     beforeTurn,
+    watchdog,
     moonServerPrefix: "moon-editor",
     client,
     definitionFile: DEFINITION,
@@ -65,6 +79,26 @@ async function sendAndStop(chat: AgentChat, events: MoonEvent[]) {
 }
 
 describe("AgentChat", () => {
+  it("gives a model that already answered in this chat longer for its first reply (watchdog)", async () => {
+    const { client } = fakeTrueForge();
+    const times = { firstReplyMs: 30, stallMs: 1000, firstReplyKnownMs: 1000 };
+    // A new chat: a slow first reply looks like a dead server (the Task C case) and ends the turn.
+    const fresh: MoonEvent[] = [];
+    await chatOn(client, undefined, times).send("slow", (e) => fresh.push(e));
+    expect(fresh.at(-1)).toMatchObject({ type: "done", status: "error" });
+    // Once the model has answered in the chat, the same slow reply is waited for.
+    const chat = chatOn(client, undefined, times);
+    await chat.send("quick", () => {});
+    const events: MoonEvent[] = [];
+    await chat.send("slow", (e) => events.push(e));
+    expect(events.at(-1)).toMatchObject({ type: "done", status: "done" });
+    // A new model in the chat is not known yet: back to the short time.
+    chat.switchModel("p/other");
+    const switched: MoonEvent[] = [];
+    await chat.send("slow", (e) => switched.push(e));
+    expect(switched.at(-1)).toMatchObject({ type: "done", status: "error" });
+  });
+
   it("labels the new session with the first message", async () => {
     const { client, labels } = fakeTrueForge();
     await chatOn(client).send("add a config command\nmore text", () => {});

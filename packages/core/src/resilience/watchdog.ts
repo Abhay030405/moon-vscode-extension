@@ -5,7 +5,8 @@
 // mcp.initialize and an EMPTY model.message at once, then nothing. So the watchdog waits for
 // real model output (a text delta, a message with text or tool calls, or the turn's end),
 // not for "any event".
-// - Before the first output: resilience.watchdogMs (short: this is the Task C case).
+// - Before the first output: resilience.watchdogMs (short: this is the Task C case), or
+//   resilience.firstReplyKnownMs once this model already answered in the chat.
 // - Later model calls in the same turn: resilience.stallMs (big contexts start slower).
 // - Paused while tools run (a long pytest is not a hang) and while waiting for approval.
 
@@ -19,11 +20,18 @@ export interface WatchedEvent {
 export interface WatchdogTimes {
   firstReplyMs: number;
   stallMs: number;
+  /**
+   * First reply of a turn once this model already answered in the chat (it is known to be
+   * reachable, so a long silent think or a big file is not a dead server). Default firstReplyMs.
+   */
+  firstReplyKnownMs?: number;
 }
 
 export class ReplyWatchdog {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private replied = false;
+  /** The model sent real output in this turn (it is reachable). */
+  sawOutput = false;
   /** Tool calls the model asked for that have not answered yet. */
   private openCalls = 0;
 
@@ -80,6 +88,7 @@ export class ReplyWatchdog {
 
   private output(): void {
     this.replied = true;
+    this.sawOutput = true;
     if (this.openCalls > 0) this.disarm(); // tools run now; restart when they answer
     else this.arm(this.times.stallMs);
   }

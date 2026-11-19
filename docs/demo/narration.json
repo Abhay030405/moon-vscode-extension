@@ -1,0 +1,30 @@
+{
+  "$comment": "Voice-over, captions and animation for the demo video. After recording, set each cue's \"at\" (m:ss in the RAW recording) to the moment its event appears on screen, then run scripts/demo/demo.ps1 edit. A cue with \"at\": null is skipped. *Starred words* are highlighted in the caption. \"badge\" shows a section label (top-left) and a title for 2 s. \"zoom\": [centreX, centreY, factor, seconds], centres as fractions of the screen; the defaults assume the run-sheet layout (Moon panel on the right, terminal at the bottom). Check them in the check/ images and adjust. Put your own recording of a line in <voice-dir>/<id>.wav to use your voice.",
+  "speed": [],
+  "speed_example": [{ "from": "1:12", "to": "2:05", "factor": 1.75 }],
+  "cues": [
+    { "id": "intro", "at": null, "badge": "Moon · Team Simpletons", "text": "Moon is a VS Code coding agent whose agent loop runs on *TrueForge*. This is Flask 3.1.3." },
+    { "id": "a3-stop", "at": null, "badge": "Streaming and Stop", "text": "First, cancellation. I start an inline edit and press *Stop* while text is streaming." },
+    { "id": "a3-clean", "at": null, "zoom": [0.35, 0.86, 1.6, 3], "text": "The preview is gone at once, and git status shows *no changed files*." },
+    { "id": "a-start", "at": null, "badge": "Task A · Inline edit", "text": "Task A. I select get_debug_flag, press Control I, and paste the exact instruction." },
+    { "id": "a-stream", "at": null, "text": "The reply *streams* from TrueForge events, and the editor stays usable." },
+    { "id": "a-diff", "at": null, "zoom": [0.42, 0.42, 1.5, 4], "text": "The diff is drawn inside the file, with *Accept and Reject on every hunk*. I accept each hunk on its own." },
+    { "id": "a-verify", "at": null, "zoom": [0.35, 0.86, 1.7, 3], "text": "With FLASK_DEBUG set to off, get_debug_flag now prints *False*." },
+    { "id": "a-reset", "at": null, "text": "I restore the file so the next task starts from clean code." },
+    { "id": "b-start", "at": null, "badge": "Task B · Agent mode", "text": "Task B, agent mode. The request *names no files*." },
+    { "id": "b-context", "at": null, "zoom": [0.84, 0.35, 1.8, 4], "text": "A *scout subagent* picked these files. The context card shows each file, why it was chosen, and the project map's *token budget*." },
+    { "id": "b-log", "at": null, "text": "Each tool call is one line in the log. The agent edits a *hidden copy* of the project, not my files." },
+    { "id": "b-approve", "at": null, "zoom": [0.84, 0.6, 1.8, 3], "text": "Running pytest needs my approval. This card is a *TrueForge tool approval*." },
+    { "id": "b-review", "at": null, "zoom": [0.84, 0.45, 1.6, 4], "text": "apply_changes is an approval tool too, and it opens the review. The change spans *code, tests and docs*, files the agent found itself." },
+    { "id": "b-apply", "at": null, "text": "I accept the hunks and press Apply. *Only accepted hunks* reach the disk." },
+    { "id": "b-verify", "at": null, "zoom": [0.35, 0.86, 1.6, 4], "text": "The CLI tests *pass*, flask help lists the new command, and secret values print as *three stars*." },
+    { "id": "b-session", "at": null, "text": "The same run in TrueForge: the turns, the *MCP tool calls*, and the *scout subagent*." },
+    { "id": "b-undo", "at": null, "text": "*Undo this whole run* puts every file back. git status is clean again." },
+    { "id": "c-break", "at": null, "badge": "Task C · Resilience", "text": "Task C. The main Claude provider now has an *invalid key* in TrueForge." },
+    { "id": "c-start", "at": null, "text": "I repeat Task A with the same instruction." },
+    { "id": "c-switch", "at": null, "zoom": [0.45, 0.45, 1.5, 3], "text": "Claude fails with a *401*, and Moon switches to the backup model, *DeepSeek on Azure*, with no click from me." },
+    { "id": "c-responsive", "at": null, "text": "The editor keeps *responding* while the backup works." },
+    { "id": "c-diff", "at": null, "zoom": [0.35, 0.86, 1.6, 3], "text": "The backup's diff is here, and git status shows *no changed files*." },
+    { "id": "outro", "at": null, "text": "Moon. It orbits your code and *lands only when you say yes*." }
+  ]
+}

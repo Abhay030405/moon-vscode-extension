@@ -81,7 +81,7 @@ describe("agent definition", () => {
     // Every agent tool Moon serves is enabled; reading an earlier conversation needs approval.
     const names = AGENT_TOOLS.map((t) => t.name).sort();
     expect([...spec.mcpServers[0].enableTools].sort()).toEqual(names);
-    expect(spec.mcpServers[0].requireApprovalForTools).toEqual(["run_command", "apply_changes", "read_past_session", "propose_plan"]);
+    expect(spec.mcpServers[0].requireApprovalForTools).toEqual(["run_command", "apply_changes", "read_past_session", "propose_plan", "undo_applied_run"]);
   });
 
   it("builds the TrueForge session link", () => {

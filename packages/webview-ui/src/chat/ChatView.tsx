@@ -97,6 +97,7 @@ export function ChatView({ entries, typing, projectName, canSend, onSend, onOpen
                   key={j}
                   summary={part.summary}
                   files={part.files}
+                  similar={part.similar}
                   working={entry.status === "running"}
                   onOpenFile={onOpenFile}
                 />

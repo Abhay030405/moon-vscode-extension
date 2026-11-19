@@ -48,9 +48,73 @@
     "reviewContextLines": 3,
     "reviewOutputChars": 2000
   },
+  "verification": {
+    "maxAttempts": 2,
+    "impactMaxUses": 20,
+    "checkCommandPatterns": [
+      "\\bpytest\\b",
+      "\\bpython3?\\s+-m\\s+(pytest|unittest)\\b",
+      "\\b(tox|nox)\\b",
+      "\\b(npm|pnpm|yarn|bun)\\s+(run\\s+)?(test|build|typecheck|check)\\b",
+      "\\b(jest|vitest|mocha|tsc)\\b",
+      "\\bgo\\s+(test|build|vet)\\b",
+      "\\bcargo\\s+(test|build|check)\\b",
+      "\\b(mvn|mvnw|gradle|gradlew)\\b.*\\b(test|verify|build|check)\\b",
+      "\\bdotnet\\s+(test|build)\\b",
+      "\\bmake\\s+(test|check)\\b"
+    ],
+    "environmentErrorPatterns": [
+      "command not found",
+      "is not recognized as an internal or external command",
+      "Cannot connect to the Docker daemon",
+      "docker daemon is not running",
+      "No module named '?pytest'?",
+      "ECONNREFUSED",
+      "connection refused",
+      "JAVA_HOME is not set"
+    ],
+    "testFileGlobs": [
+      "**/test_*.py",
+      "**/*_test.py",
+      "**/conftest.py",
+      "**/tests/**",
+      "**/test/**",
+      "**/__tests__/**",
+      "**/*.test.*",
+      "**/*.spec.*",
+      "**/*_test.go",
+      "**/src/test/**"
+    ],
+    "nothingToTestGlobs": [
+      "**/*.md",
+      "**/*.rst",
+      "**/*.txt",
+      "**/*.adoc",
+      "docs/**",
+      "**/CHANGES*",
+      "**/CHANGELOG*",
+      "**/LICENSE*",
+      "**/*.json",
+      "**/*.yaml",
+      "**/*.yml",
+      "**/*.toml",
+      "**/*.ini",
+      "**/*.cfg"
+    ],
+    "testCheckPatterns": [
+      "\\bassert",
+      "\\bexpect\\(",
+      "\\bdef test_",
+      "^\\s*(it|test)\\(",
+      "\\bfunc Test",
+      "@Test\\b",
+      "#\\[test\\]"
+    ]
+  },
   "resilience": {
     "watchdogMs": 12000,
-    "stallMs": 45000,
+    "stallMs": 180000,
+    "firstReplyKnownMs": 60000,
     "rateLimitRetries": 2,
     "rateLimitWaitMs": 4000,
     "circuitBreaker": {
@@ -77,6 +141,8 @@
     "readFileMaxLines": 400,
     "maxFileBytes": 1000000,
     "maxOutputChars": 20000,
+    "editResultContextLines": 2,
+    "editResultMaxLines": 40,
     "ignoredDirs": [
       ".git",
       "node_modules",

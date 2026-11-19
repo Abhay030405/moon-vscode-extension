@@ -66,6 +66,8 @@ export class AgentChat {
   private stoppedTurnId: string | undefined;
   /** The model this chat's session uses (can change in place, see switchModel). */
   private currentModel: string;
+  /** The current model already answered in this chat: its first reply may take longer (watchdog). */
+  private modelAnswered = false;
   /** The stored spec must get the current model and MCP server name before the next turn. */
   private refreshSpec = false;
   /** A turn waiting for the user, and what it waits for (approvals and/or questions). */
@@ -124,6 +126,7 @@ export class AgentChat {
   switchModel(model: string): void {
     if (model === this.currentModel) return;
     this.currentModel = model;
+    this.modelAnswered = false;
     if (this.sessionId) this.refreshSpec = true;
   }
 
@@ -220,8 +223,9 @@ export class AgentChat {
     // Set when the watchdog (not the user) ended the turn: reported as an error, so the
     // fallback can switch models.
     let noReplyMs: number | undefined;
-    const watchdog = this.options.watchdog
-      ? new ReplyWatchdog(this.options.watchdog, (ms) => {
+    const times = this.options.watchdog;
+    const watchdog = times
+      ? new ReplyWatchdog({ firstReplyMs: this.modelAnswered ? (times.firstReplyKnownMs ?? times.firstReplyMs) : times.firstReplyMs, stallMs: times.stallMs }, (ms) => {
           noReplyMs = ms;
           abort.abort();
           this.cancelRemote();
@@ -280,6 +284,7 @@ export class AgentChat {
       }
     } finally {
       watchdog?.stop();
+      if (watchdog?.sawOutput) this.modelAnswered = true;
       this.running = undefined;
     }
   }

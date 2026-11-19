@@ -234,6 +234,24 @@ describe("report_context", () => {
     } as never);
     expect(events.map((e) => e.type)).toEqual(["tool-call", "context-choice"]);
     expect(events[1]).toEqual({ type: "context-choice", files: [{ path: "a.py", reason: "why" }] });
+
+    // The scout's "similar code to copy" line rides along (section 13.3).
+    const withSimilar = new TurnEventMapper().map({
+      type: "model.message",
+      id: "m2",
+      createdAt: "",
+      threadId: "main",
+      content: "",
+      finishReason: "tool_calls",
+      toolCalls: [
+        {
+          id: "c2",
+          type: "function",
+          function: { name: "report_context", arguments: JSON.stringify({ files: [{ path: "a.py", reason: "why" }], similar: "like the routes command" }) },
+        },
+      ],
+    } as never);
+    expect(withSimilar[1]).toEqual({ type: "context-choice", files: [{ path: "a.py", reason: "why" }], similar: "like the routes command" });
   });
 
   it("edit_file waits until the agent reported its files", async () => {

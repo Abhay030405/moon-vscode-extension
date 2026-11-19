@@ -11,6 +11,7 @@ import { getErrorsTool } from "./get-errors.js";
 import { listFilesTool } from "./list-files.js";
 import { listPendingChangesTool } from "./list-pending-changes.js";
 import { listPastSessionsTool, readPastSessionTool, saveSummaryTool } from "./memory-tools.js";
+import { undoRunTool } from "./undo-run.js";
 import { workLogTool } from "./work-log.js";
 import { proposePlanTool } from "./propose-plan.js";
 import { proposeEditTool } from "./propose-edit.js";
@@ -40,6 +41,7 @@ export const AGENT_TOOLS: MoonTool[] = [
   saveSummaryTool,
   listPastSessionsTool,
   readPastSessionTool,
+  undoRunTool,
 ] as MoonTool[];
 
 /** Every Moon tool (used for step labels in the live log). */

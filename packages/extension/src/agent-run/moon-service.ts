@@ -238,7 +238,7 @@ export class MoonService implements vscode.Disposable {
         mcpServer: chatKind === "agent" ? names.agent : names.editor,
         baseUrl: config.trueforge.baseUrl,
         sessionUrlTemplate: config.trueforge.sessionUrlTemplate,
-        watchdog: { firstReplyMs: config.resilience.watchdogMs, stallMs: config.resilience.stallMs },
+        watchdog: { firstReplyMs: config.resilience.watchdogMs, stallMs: config.resilience.stallMs, firstReplyKnownMs: config.resilience.firstReplyKnownMs },
         // Probes get their own conversation id, so they never join a chat in the history.
         labels: (title) => sessionLabels({ project, conversation: labelKind === "probe" ? newConversationId() : conversation, kind: labelKind, model, title }),
         adjustSpec: chatKind === "agent" && extras ? (spec) => withExtras(spec, extras, config.extras) : undefined,

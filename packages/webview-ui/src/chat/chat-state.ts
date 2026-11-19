@@ -37,7 +37,7 @@ export type TurnPart =
   | { kind: "text"; text: string }
   | { kind: "log"; lines: LogLine[] }
   /** The context card: what Moon gave the agent (summary) and the files it chose (files). */
-  | { kind: "context"; summary?: ContextSummary; files?: ChosenFile[] }
+  | { kind: "context"; summary?: ContextSummary; files?: ChosenFile[]; similar?: string }
   /** Moon changed models (fallback after a failure, or back to the main model). */
   | { kind: "switch"; direction: "fallback" | "back"; from: string; to: string; reason?: string };
 
@@ -171,7 +171,7 @@ function applyMessage(state: ChatState, message: ChatMessage): ChatState {
 
 function applyEvent(state: ChatState, event: MoonEvent): ChatState {
   if (event.type === "session") return { ...state, sessionUrl: event.url, model: event.model };
-  if (event.type === "context-choice") return updateContextCard(state, { files: event.files });
+  if (event.type === "context-choice") return updateContextCard(state, { files: event.files, similar: event.similar });
   if (event.type === "model-switch") return applySwitch(state, event);
   const last = state.entries.at(-1);
   if (last?.kind !== "agent") return state;
@@ -239,7 +239,7 @@ function applySwitch(state: ChatState, event: Extract<MoonEvent, { type: "model-
 }
 
 /** Fills the current turn's context card (created at the start of the turn if missing). */
-function updateContextCard(state: ChatState, update: { summary?: ContextSummary; files?: ChosenFile[] }): ChatState {
+function updateContextCard(state: ChatState, update: { summary?: ContextSummary; files?: ChosenFile[]; similar?: string }): ChatState {
   const last = state.entries.at(-1);
   if (last?.kind !== "agent") return state;
   const parts = [...last.parts];

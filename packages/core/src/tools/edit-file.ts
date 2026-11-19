@@ -7,6 +7,7 @@ import { PROPOSE_PLAN_TOOL, REPORT_CONTEXT_TOOL } from "../shared/constants.js";
 import * as path from "node:path";
 import { z } from "zod";
 import { lineCounts } from "../workspace/change-tracker.js";
+import { diffLines, splitLines } from "../workspace/hunks.js";
 import { applyTextEdits, EditApplyError } from "../workspace/apply.js";
 import { ToolError } from "./context.js";
 import { defineTool } from "./tool.js";
@@ -48,7 +49,7 @@ export const editFileTool = defineTool({
       if (existsSync(abs)) throw new ToolError(`"${rel}" already exists. Use \`edits\` to change it.`);
       mkdirSync(path.dirname(abs), { recursive: true });
       writeFileSync(abs, args.content);
-      ctx.agentRun.onEdit?.();
+      ctx.agentRun.onEdit?.(rel, null, args.content);
       const { added } = lineCounts(null, args.content);
       return `Created ${rel} (${added} lines) in the working copy.`;
     }
@@ -63,9 +64,32 @@ export const editFileTool = defineTool({
     }
     if (after === before) throw new ToolError("These edits change nothing.");
     writeFileSync(abs, after);
-    ctx.agentRun.onEdit?.();
+    ctx.agentRun.onEdit?.(rel, before, after);
     const { added, removed } = lineCounts(before, after);
-    return `Edited ${rel} in the working copy (+${added} -${removed} lines).`;
+    const { editResultContextLines, editResultMaxLines } = ctx.limits;
+    const view = changedLines(before, after, editResultContextLines, editResultMaxLines);
+    return `Edited ${rel} in the working copy (+${added} -${removed} lines). The changed part now reads:\n${view}`;
   },
   describe: (args) => ({ action: args.content !== undefined ? "Create" : "Edit", target: args.path ?? "" }),
 });
+
+/**
+ * The changed lines of the new text with a few unchanged lines around them, numbered, so the
+ * agent's view of the file stays current without reading it again (design-decisions 13.2).
+ */
+export function changedLines(before: string, after: string, contextLines: number, maxLines: number): string {
+  const newLines = splitLines(after);
+  const shown: string[] = [];
+  let lastShown = -1;
+  for (const hunk of diffLines(splitLines(before), newLines)) {
+    const from = Math.max(lastShown + 1, hunk.newStart - contextLines);
+    const to = Math.min(newLines.length, hunk.newStart + hunk.newLines.length + contextLines);
+    if (lastShown >= 0 && from > lastShown + 1) shown.push("...");
+    // Same layout as read_file: the line number, two spaces, the text.
+    const width = String(newLines.length).length;
+    for (let i = from; i < to; i++) shown.push(`${String(i + 1).padStart(width)}  ${newLines[i]}`);
+    lastShown = to - 1;
+  }
+  if (shown.length <= maxLines) return shown.join("\n");
+  return [...shown.slice(0, maxLines), `[... ${shown.length - maxLines} more lines; read_file shows the rest]`].join("\n");
+}

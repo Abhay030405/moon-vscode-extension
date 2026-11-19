@@ -1,0 +1,36 @@
+{
+  "$comment": "The animated intro. Each scene is drawn by intro.html and lasts as long as its voice line plus a short pause; animation steps are timed to phrases in the line, so keep the phrases the scene code looks for. Change a line here and re-run render-intro.mjs.",
+  "voice": "en-IN-PrabhatNeural",
+  "rate": "+50%",
+  "fallbackVoice": "Microsoft David Desktop",
+  "pause": 0.3,
+  "scenes": [
+    {
+      "id": "whatis",
+      "lead": 0.6,
+      "text": "Moon is a coding agent for Visual Studio Code. It edits code inline, works across a whole project, and changes nothing until you approve. First, how it works. Then the live demo."
+    },
+    {
+      "id": "arch",
+      "text": "The architecture. The Moon panel and editor sit on a thin Visual Studio Code layer; the logic lives in Moon core. Core sends each turn to TrueForge, which runs the agent loop and streams events back. Only TrueForge calls a model: Claude first, DeepSeek on Azure as backup. The agent edits a hidden copy through Moon's MCP tools, and only accepted hunks reach your files."
+    },
+    {
+      "id": "talk",
+      "text": "Moon uses the TrueForge SDK: a session per chat, turns in, events out. The agent reaches the editor through seventeen MCP tools, and tools that touch your real project pause for approval."
+    },
+    {
+      "id": "flow",
+      "text": "One agent run, Task B. The request names no files. A scout subagent finds them, and the context card shows why. The agent edits code, tests and docs in the hidden copy, runs pytest after approval, and fixes failures. Apply changes opens the review, and one click undoes the run. Stop leaves nothing half-applied."
+    },
+    {
+      "id": "context",
+      "text": "Flask is seventeen thousand lines, so Moon builds a small start with no model call: project rules up to two thousand tokens, and a project map, where files link by the names they use, ranked with PageRank toward your request, and packed into ten percent of the window. Mentions add files or symbols, and a safety filter checks every input. A scout subagent picks the files, report context puts them on the context card, and the agent reads more through capped tools until TrueForge compacts at eighty percent.",
+      "tail": 1.3
+    },
+    {
+      "id": "demo",
+      "text": "That is how Moon works. Now, the live demo.",
+      "tail": 1.0
+    }
+  ]
+}

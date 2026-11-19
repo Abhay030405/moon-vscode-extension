@@ -63,7 +63,7 @@ export const runCommandTool = defineTool({
       signal?.removeEventListener("abort", onStop);
     }
     result = { ...result, output: stripControl(result.output) };
-    run.onCommand?.(result);
+    const checkNote = run.onCommand?.(result);
 
     const status = result.cancelled
       ? "Stopped by the user."
@@ -71,6 +71,7 @@ export const runCommandTool = defineTool({
         ? `Timed out after ${settings.commandTimeoutMs} ms and was stopped.`
         : `Exit code ${result.exitCode}.`;
     const notes: string[] = [];
+    if (checkNote) notes.push(checkNote);
     if (result.truncated) notes.push(`[Only the last ${settings.commandOutputMaxChars} characters of output are shown.]`);
     // Safeguard: tests should load the copy. If the output names the real project's folder but
     // not the copy's, the command probably used the user's files instead (e.g. an editable install).

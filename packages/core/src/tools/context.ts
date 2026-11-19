@@ -47,12 +47,15 @@ export interface AgentRunHooks {
    * user clicks Allow). run_command runs only with a matching approval (complete mediation).
    */
   approvals: ApprovalLedger;
-  /** Called after every change to the copy (edit_file). */
-  onEdit?(): void;
+  /** Called after every change to the copy (edit_file), with the file's text before (null = new file) and after. */
+  onEdit?(rel: string, before: string | null, after: string): void;
   /** Aborted when the user presses Stop: kills a running command. */
   signal: AbortSignal;
-  /** Every finished command, for the review screen's test results. */
-  onCommand?(result: RunResult): void;
+  /**
+   * Every finished command, for the review screen's test results. Returns Moon's note for the
+   * agent when the command was a check (tests, a build), e.g. "attempt 1 failed".
+   */
+  onCommand?(result: RunResult): string | undefined;
   /**
    * Runs after the user approved apply_changes in TrueForge: writes the accepted changes to
    * the real project and returns the report the agent sees (applied and rejected hunks).
@@ -84,6 +87,12 @@ export interface MemoryHooks {
   readPast(id: string, part: "summary" | "work" | "transcript"): Promise<string>;
 }
 
+/** Undoing an earlier applied run of this conversation (section 13.5), set by agent mode. */
+export interface UndoRunHooks {
+  /** Restores that run's backup (after the user approved); returns what happened, for the agent. */
+  undo(run: number): Promise<string>;
+}
+
 export class ToolContext {
   readonly paths: PathGuard;
   readonly secrets: SecretGuard;
@@ -97,6 +106,8 @@ export class ToolContext {
   agentRun: AgentRunHooks | undefined;
   /** Set only on agent mode's context: this conversation's memory. */
   memory: MemoryHooks | undefined;
+  /** Set only on agent mode's context: undo of this conversation's applied runs. */
+  undoRuns: UndoRunHooks | undefined;
   readonly runSettings: MoonConfig["agentRun"];
   readonly security: MoonConfig["security"];
   /** Moon's security log, when the extension keeps one (never given file contents or secrets). */
@@ -109,7 +120,7 @@ export class ToolContext {
   /** True while a plan from propose_plan waits for the user: edit_file is refused until it is approved. */
   planWaiting = false;
 
-  constructor(root: string, config: Pick<MoonConfig, "tools" | "safety" | "agentRun" | "security">) {
+  constructor(root: string, config: Pick<MoonConfig, "tools" | "safety" | "agentRun" | "security" | "verification">) {
     this.security = config.security;
     this.paths = new PathGuard(root);
     this.secrets = new SecretGuard(config.safety);

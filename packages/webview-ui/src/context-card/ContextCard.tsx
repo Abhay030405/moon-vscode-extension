@@ -10,6 +10,8 @@ import type { ContextSummary } from "../protocol/messages";
 interface Props {
   summary?: ContextSummary;
   files?: ChosenFile[];
+  /** The scout's "similar code to copy" line (the agent's words). */
+  similar?: string;
   /** The turn is still running (the agent has not reported its files yet). */
   working: boolean;
   onOpenFile(path: string): void;
@@ -22,7 +24,7 @@ const MENTION_MODE: Record<ContextSummary["mentions"][number]["mode"], string> =
   missing: "not found",
 };
 
-export function ContextCard({ summary, files, working, onOpenFile }: Props) {
+export function ContextCard({ summary, files, similar, working, onOpenFile }: Props) {
   return (
     <section className="moon-context" aria-label="Context">
       <div className="moon-context-title">Context</div>
@@ -39,6 +41,12 @@ export function ContextCard({ summary, files, working, onOpenFile }: Props) {
         </ul>
       ) : (
         working && <div className="moon-context-note">Finding the files that matter…</div>
+      )}
+      {similar && (
+        <div className="moon-context-similar">
+          <span className="moon-context-similar-label">Similar code to copy: </span>
+          {similar}
+        </div>
       )}
       {summary && (
         <div className="moon-context-budget">

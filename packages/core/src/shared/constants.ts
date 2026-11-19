@@ -177,6 +177,8 @@ export const REPORT_CONTEXT_TOOL = "report_context";
 
 /** The tool the agent calls to show its plan before a big task (needs the user's approval). */
 export const PROPOSE_PLAN_TOOL = "propose_plan";
+/** Undo an earlier applied run of the conversation (section 13.5); pauses for approval. */
+export const UNDO_RUN_TOOL = "undo_applied_run";
 
 // ---- Security (OWASP LLM Top 10 2026; docs/security.md) ----
 
@@ -246,3 +248,12 @@ export const SECURITY_LOG_DIR = "security-log";
 
 /** The link confirmation shows at most this much of the address. */
 export const LINK_PREVIEW_CHARS = 300;
+
+/** Exit codes shells use for "command not found" (sh/bash: 127, Windows cmd: 9009). Not a failed check. */
+export const COMMAND_NOT_FOUND_EXIT_CODES: readonly number[] = [127, 9009];
+
+/** Longest environment-problem line (e.g. "Cannot connect to the Docker daemon") shown with a check result. */
+export const ENV_REASON_MAX_CHARS = 160;
+
+/** Impact check: how many lines from a definition to look for its closing ")". */
+export const IMPACT_SIGNATURE_MAX_LINES = 15;

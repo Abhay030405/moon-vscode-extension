@@ -60,13 +60,24 @@ export interface ReviewView {
   files: ReviewFileView[];
   /** Commands the agent ran in its copy (test results). */
   commands: CommandResultView[];
-  /** Security warnings: secrets or hidden characters in what would be written. */
-  warnings: { rel: string; text: string }[];
   /**
-   * Did the agent check its work? "passed"/"failed": the last command ran after the last edit
-   * and exited 0 / not 0; "stale": edits came after the last command; "none": nothing ran.
+   * Warnings: security (secrets or hidden characters in what would be written), tests (a test
+   * weakened or deleted), impact (uses of a changed function the agent did not update).
    */
-  verified: { state: "passed" | "failed" | "stale" | "none"; command?: string; exitCode?: number | null };
+  warnings: { kind: "security" | "tests" | "impact"; rel: string; text: string }[];
+  /**
+   * Moon's check result, decided from its own records of edits and check commands, never from
+   * the agent's claim (docs/design-decisions.md section 12). Same shape as core's Verification.
+   */
+  verified: {
+    state: "verified" | "failed" | "not-verified" | "partly-verified";
+    /** Why this result, in one sentence. */
+    reason: string;
+    /** The command that decided it, or the one the user can run to check. */
+    command?: string;
+    /** Extra facts, e.g. "failed on the original code and passes after the change". */
+    evidence: string[];
+  };
 }
 
 /** The agent wants to run a command; TrueForge is waiting for the user's answer. */

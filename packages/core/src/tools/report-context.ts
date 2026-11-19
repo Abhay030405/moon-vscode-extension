@@ -18,6 +18,7 @@ export const reportContextTool = defineTool({
     "List the 3 to 5 files that matter most, each with one short reason, e.g. " +
     '{"files":[{"path":"src/app/cli.py","reason":"defines the existing CLI commands; the new one goes here"}]}. ' +
     "A file you are going to create gets \"new\": true (for example in an empty project). " +
+    "Add `similar`: one line naming the existing code to copy in style (from the scout's report), when there is one. " +
     "The user sees this list in Moon's panel.",
   input: {
     files: z
@@ -30,6 +31,14 @@ export const reportContextTool = defineTool({
       )
       .min(1)
       .describe("The files you chose, most important first."),
+    similar: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "One line: the existing code your change should copy in style, e.g. 'new CLI commands look like the routes command in src/app/cli.py'. " +
+          "Leave out when nothing similar exists.",
+      ),
   },
   readOnly: true,
   run(ctx, args) {

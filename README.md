@@ -126,7 +126,15 @@ Real config files are git-ignored; only the `*.example.json` files are committed
 | `agentRun.commandEnv` | Extra environment variables for commands run in the copy. Placeholders: `{copy}`, `{project}`, `{pathSep}`, `{env:NAME}`. The example points Python at the copy's code and puts the project's `.venv` on `PATH` |
 | `agentRun.reviewContextLines` | Unchanged lines shown around each change in the review screen |
 | `agentRun.reviewOutputChars` | Characters of each command's output shown with the checks in the review screen |
-| `resilience.watchdogMs` | No reply from the model this long after sending (TrueForge's own start events do not count): Moon cancels the turn and moves the request to the other model |
+| `verification.maxAttempts` | Fix attempts (each a different approach) before the agent must ask the user what to try next |
+| `verification.impactMaxUses` | Impact check: at most this many uses the agent did not update (of a renamed or removed function, or one whose inputs changed) are listed to the agent and on the review screen |
+| `verification.checkCommandPatterns` | Commands that count as checks (tests, builds), as regexes. Moon's check result (Verified / Failed / Not verified / Partly verified) is decided from these commands' exit codes, never from the agent's claim |
+| `verification.environmentErrorPatterns` | Output lines meaning a check could not run (tool missing, Docker not running): "not verified", never a failed attempt |
+| `verification.testFileGlobs` | Test files: changing only these is not a code change (a new failing test before the fix is expected), and the review warns when a change removes checks from them |
+| `verification.nothingToTestGlobs` | Changing only these files (docs, settings) gives "Not verified: nothing to test" |
+| `verification.testCheckPatterns` | Lines that are test checks (assertions, test definitions), as regexes; used for the weakened-test warning |
+| `resilience.watchdogMs` | No reply from the model this long after sending (TrueForge's own start events do not count): Moon cancels the turn and moves the request to the other model. Used until the model has answered once in the chat (the Task C case) |
+| `resilience.firstReplyKnownMs` | The same, once the model already answered in this chat: longer, because a model that is known to work can think silently or write a big file before anything streams |
 | `resilience.stallMs` | After the model has started answering: the longest silence allowed (time while a tool or command runs does not count) |
 | `resilience.rateLimitRetries`, `resilience.rateLimitWaitMs` | On "too many requests" (429): try the same model again this many times, waiting this long (doubling) before switching |
 | `resilience.circuitBreaker.*` | After the main model fails, Moon checks it in the background with a tiny request: first after `firstProbeMs`, then each wait times `backoffFactor`, at most `maxProbeMs`. A change to the main provider's settings in TrueForge (key or address fixed) triggers a check at once. The next task after it answers switches back |
@@ -162,6 +170,7 @@ Real config files are git-ignored; only the `*.example.json` files are committed
 | `tools.readFileMaxLines` | Most lines one `read_file` call returns |
 | `tools.maxFileBytes` | Larger files are not read or searched |
 | `tools.maxOutputChars` | Any tool result is cut at this many characters |
+| `tools.editResultContextLines`, `tools.editResultMaxLines` | `edit_file` returns the changed lines with this much context, up to this many lines, so the agent need not read the file again |
 | `tools.ignoredDirs` | Folders the tools never walk into (dependencies, build output, caches) |
 | `ui.typingCharsPerSecond` | Steady speed the panel reveals a streamed answer at (it arrives from the model in bursts) |
 | `ui.typingMaxLagMs` | The panel speeds up so it is never more than this far behind the real stream |
@@ -327,7 +336,7 @@ A short tour of how Moon is built. Full details: [`docs/architecture.md`](docs/a
 
 | Part | What it does |
 |---|---|
-| Watchdog | No first reply within `resilience.watchdogMs`, or a silence longer than `resilience.stallMs`: the turn is cancelled and moved |
+| Watchdog | No first reply within `resilience.watchdogMs` (`resilience.firstReplyKnownMs` once the model already answered in the chat), or a silence longer than `resilience.stallMs`: the turn is cancelled and moved |
 | Error classifier | Sorts a failure into: invalid key, model not found, too many requests, provider error, cannot connect, no reply, Moon's tools not reachable, TrueForge not reachable. Only model failures cause a switch |
 | Automatic fallback | The same request starts on the backup model (DeepSeek) with no action from you; you see a notice |
 | Circuit breaker | Checks the broken main model in the background with a tiny request (backoff); also checks at once when its settings change in TrueForge |
@@ -356,6 +365,7 @@ A short tour of how Moon is built. Full details: [`docs/architecture.md`](docs/a
 | Question card | The agent asks with options plus a free-text box; your answer is shown in the chat |
 | Plan card | `propose_plan`: steps, files and risks. **Approve**, or **Edit** to send your changes back. Edits wait until the plan is approved |
 | Recall card | `read_past_session` on a chat you didn't pick: Open it, Allow or Deny |
+| Undo card | `undo_applied_run`: the agent proposes undoing an earlier applied run of this chat. The card lists the files that go back; a file changed since that apply is asked about one by one (No = it stays as it is) |
 | General card | Any other tool that needs approval (for example a GitHub write): tool, server and arguments. Never auto-allowed |
 
 ### External tools (off by default)

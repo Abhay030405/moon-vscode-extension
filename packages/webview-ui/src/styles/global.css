@@ -91,6 +91,7 @@
   --moon-primary-hover-opacity: 0.9;
   --moon-picker-max-height: 220px;
   --moon-context-bar-height: 4px;
+  --moon-review-head-max-height: 40vh;
   --moon-picker-kind-width: 46px;
 
   /* Motion */
@@ -711,7 +712,18 @@ html {
   padding: var(--moon-space-l);
   border-bottom: var(--moon-border-width) solid var(--moon-border);
 }
+/* The summary and warnings scroll on their own, so a long summary never hides the changes or Apply. */
+.moon-review-head {
+  flex-shrink: 0;
+  max-height: var(--moon-review-head-max-height);
+  overflow-y: auto;
+}
+.moon-review-head-bar {
+  padding-top: var(--moon-space-m);
+  padding-bottom: var(--moon-space-m);
+}
 .moon-review-foot {
+  flex-shrink: 0;
   flex-direction: row;
   border-top: var(--moon-border-width) solid var(--moon-border);
   border-bottom: none;
@@ -931,6 +943,12 @@ html {
   color: var(--moon-fg-muted);
   font-size: var(--moon-font-size-small);
 }
+.moon-context-similar {
+  font-size: var(--moon-font-size-small);
+}
+.moon-context-similar-label {
+  font-weight: var(--moon-weight-strong);
+}
 .moon-context-note,
 .moon-context-dim {
   color: var(--moon-fg-muted);
@@ -1120,9 +1138,13 @@ html {
   margin: var(--moon-space-s) 0;
   font-size: var(--moon-font-size-small);
 }
-.moon-review-verified.ok {
+.moon-review-verified.verified {
   color: var(--moon-ok);
 }
 .moon-review-verified.failed {
+  color: var(--moon-error);
+}
+.moon-review-verified.not-verified,
+.moon-review-verified.partly-verified {
   color: var(--moon-warning);
 }

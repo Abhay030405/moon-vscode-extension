@@ -1,0 +1,792 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Moon intro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=block" rel="stylesheet">
+<style>
+  html, body { margin: 0; background: #f4f2ec; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+// The Moon intro. Every frame is a pure function of time t (seconds), so render-intro.mjs can step
+// through it frame by frame. Light theme in moon colours: pearl background, deep navy, moon gold.
+const W = 1920, H = 1080;
+const cv = document.getElementById("c");
+const ctx = cv.getContext("2d");
+
+const C = {
+  bg: "#f4f2ec", bgHi: "#fbfaf6", dot: "#e2ddd0",
+  card: "#ffffff", cream: "#fcf7ea", line: "#ddd6c6",
+  navy: "#16203d", navy2: "#24315a", text: "#18203a", muted: "#66708a", faint: "#a39c8c",
+  gold: "#b38b3f", goldSoft: "#e9dcbc", blue: "#4a6aa5", blueSoft: "#dfe6f3",
+  moonLight: "#fbf8f0", moonMid: "#e9e2d0", moonDark: "#c9bfa6",
+};
+const SANS = 'Inter, "Segoe UI", Arial, sans-serif';
+const MONO = '"JetBrains Mono", Consolas, monospace';
+
+// ---------- helpers ----------
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const easeIO = (k) => (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
+const easeOut = (k) => 1 - Math.pow(1 - k, 3);
+const easeBack = (k) => { const c = 1.6; return 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); };
+const ap = (u, s, d = 0.5) => easeOut(clamp((u - s) / d));
+const bump = (u, s, e, r = 0.35) => clamp((u - s) / r) * (1 - clamp((u - e) / r));
+function mix(c1, c2, k) {
+  const p = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+  const a = p(c1), b = p(c2);
+  return `rgb(${a.map((v, i) => Math.round(lerp(v, b[i], clamp(k)))).join(",")})`;
+}
+function rng(seed) { return () => { seed |= 0; seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function withAlpha(a, fn) { if (a <= 0.001) return; ctx.save(); ctx.globalAlpha *= a; fn(); ctx.restore(); }
+function circle(x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); }
+function rrect(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function text(s, x, y, { size = 24, font = SANS, weight = 500, color = C.text, align = "left", spacing = 0 } = {}) {
+  ctx.font = `${weight} ${size}px ${font}`;
+  ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = "alphabetic";
+  ctx.letterSpacing = spacing + "px";
+  ctx.fillText(s, x, y);
+  ctx.letterSpacing = "0px";
+}
+
+// Connector drawn up to fraction k; when "flow" > 0 its dashes move to show direction.
+function connector(pts, { k = 1, color = C.faint, width = 2, dash = null, flow = 0, t = 0 } = {}) {
+  if (k <= 0) return;
+  const segs = []; let total = 0;
+  for (let i = 1; i < pts.length; i++) { const l = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); segs.push(l); total += l; }
+  let left = total * k;
+  ctx.save();
+  const col = flow > 0 ? mix(color.startsWith("#") ? color : C.faint, C.gold, flow) : color;
+  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = width + flow; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  if (flow > 0.05) { ctx.setLineDash([10, 8]); ctx.lineDashOffset = -t * 40; } else if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(...pts[0]);
+  let end = pts[0], prev = pts[0];
+  for (let i = 1; i < pts.length && left > 0; i++) {
+    const f = Math.min(1, left / segs[i - 1]);
+    end = [lerp(pts[i - 1][0], pts[i][0], f), lerp(pts[i - 1][1], pts[i][1], f)];
+    prev = pts[i - 1]; ctx.lineTo(...end); left -= segs[i - 1];
+  }
+  ctx.stroke(); ctx.setLineDash([]);
+  if (k > 0.97) {
+    const a = Math.atan2(end[1] - prev[1], end[0] - prev[0]), s = 12;
+    ctx.beginPath(); ctx.moveTo(...end);
+    ctx.lineTo(end[0] - s * Math.cos(a - 0.45), end[1] - s * Math.sin(a - 0.45));
+    ctx.lineTo(end[0] - s * Math.cos(a + 0.45), end[1] - s * Math.sin(a + 0.45));
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// A moon-gold packet travelling along a path while k goes 0..1.
+function pulse(pts, k) {
+  if (k <= 0 || k >= 1) return;
+  const lens = []; let total = 0;
+  for (let i = 1; i < pts.length; i++) { const l = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); lens.push(l); total += l; }
+  const at = (d) => { for (let i = 0; i < lens.length; i++) { if (d <= lens[i]) { const f = d / lens[i]; return [lerp(pts[i][0], pts[i + 1][0], f), lerp(pts[i][1], pts[i + 1][1], f)]; } d -= lens[i]; } return pts[pts.length - 1]; };
+  const d = easeIO(k) * total;
+  for (let j = 7; j >= 1; j--) { const p = at(Math.max(0, d - j * 10)); ctx.fillStyle = `rgba(179,139,63,${0.3 * (1 - j / 8)})`; circle(p[0], p[1], 7 - j * 0.6); ctx.fill(); }
+  const p = at(d);
+  ctx.fillStyle = "#fff"; circle(p[0], p[1], 10); ctx.fill();
+  ctx.fillStyle = C.gold; circle(p[0], p[1], 7); ctx.fill();
+}
+
+// Numbered step badge that pops in.
+function stepBadge(x, y, n, k) {
+  if (k <= 0) return;
+  const s = easeBack(clamp(k));
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+  ctx.shadowColor = "rgba(22,32,61,0.18)"; ctx.shadowBlur = 10; ctx.shadowOffsetY = 3;
+  ctx.fillStyle = C.navy; circle(0, 0, 17); ctx.fill();
+  ctx.shadowColor = "transparent";
+  text(String(n), 0, 7, { size: 18, weight: 700, color: C.goldSoft, align: "center" });
+  ctx.restore();
+}
+
+// A white card with a soft shadow. hi (0..1) lifts it and lights the border in moon gold.
+function card(x, y, w, h, { title = null, sub = null, sub2 = null, hi = 0, dashed = false, eyebrow = null, fill = C.card, titleSize = 22, subSize = 16, icon = null } = {}) {
+  hi = clamp(hi);
+  ctx.save();
+  ctx.translate(0, -4 * hi);
+  ctx.shadowColor = `rgba(22,32,61,${0.07 + 0.1 * hi})`; ctx.shadowBlur = 16 + 18 * hi; ctx.shadowOffsetY = 5 + 5 * hi;
+  ctx.fillStyle = fill; rrect(x, y, w, h, 14); ctx.fill();
+  ctx.shadowColor = "transparent";
+  ctx.strokeStyle = mix(C.line, C.gold, hi); ctx.lineWidth = 1.5 + 1.5 * hi;
+  if (dashed) ctx.setLineDash([7, 6]);
+  rrect(x, y, w, h, 14); ctx.stroke(); ctx.setLineDash([]);
+  if (hi > 0.01) { ctx.fillStyle = `rgba(179,139,63,${hi})`; rrect(x, y + 14, 4, h - 28, 2); ctx.fill(); }
+  let tx = x + 22;
+  if (icon) { iconChip(x + 22, y + h / 2 - 20, 40, icon, hi); tx = x + 78; }
+  let ty = y + (eyebrow ? 32 : 0);
+  if (eyebrow) text(eyebrow.toUpperCase(), tx, ty, { size: 13, weight: 700, color: C.gold, spacing: 2 });
+  if (title) { ty += eyebrow ? 32 : sub ? (h - (subSize + 11) - (sub2 ? subSize + 7 : 0)) / 2 + titleSize * 0.35 : h / 2 + titleSize * 0.35; text(title, tx, ty, { size: titleSize, weight: 600 }); }
+  if (sub) { ty += subSize + 11; text(sub, tx, ty, { size: subSize, color: C.muted }); }
+  if (sub2) { ty += subSize + 7; text(sub2, tx, ty, { size: subSize, color: C.muted }); }
+  ctx.restore();
+}
+
+// Small line icons in a rounded navy chip.
+function iconChip(x, y, s, kind, hi = 0) {
+  ctx.save();
+  ctx.fillStyle = mix(C.navy, C.navy2, hi); rrect(x, y, s, s, 10); ctx.fill();
+  ctx.strokeStyle = C.goldSoft; ctx.fillStyle = C.goldSoft; ctx.lineWidth = 2.2; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  const cx = x + s / 2, cy = y + s / 2, r = s * 0.28;
+  ctx.beginPath();
+  if (kind === "panel") { ctx.rect(cx - r, cy - r, r * 2, r * 2); ctx.moveTo(cx + r * 0.2, cy - r); ctx.lineTo(cx + r * 0.2, cy + r); ctx.stroke(); }
+  else if (kind === "code") { ctx.moveTo(cx - r * 0.3, cy - r); ctx.lineTo(cx - r, cy); ctx.lineTo(cx - r * 0.3, cy + r); ctx.moveTo(cx + r * 0.3, cy - r); ctx.lineTo(cx + r, cy); ctx.lineTo(cx + r * 0.3, cy + r); ctx.stroke(); }
+  else if (kind === "layers") { for (let i = 0; i < 3; i++) { ctx.moveTo(cx - r, cy - r * 0.7 + i * r * 0.7); ctx.lineTo(cx + r, cy - r * 0.7 + i * r * 0.7); } ctx.stroke(); }
+  else if (kind === "plug") { ctx.moveTo(cx - r * 0.4, cy - r); ctx.lineTo(cx - r * 0.4, cy - r * 0.3); ctx.moveTo(cx + r * 0.4, cy - r); ctx.lineTo(cx + r * 0.4, cy - r * 0.3); ctx.rect(cx - r * 0.75, cy - r * 0.3, r * 1.5, r * 0.8); ctx.moveTo(cx, cy + r * 0.5); ctx.lineTo(cx, cy + r); ctx.stroke(); }
+  else if (kind === "copy") { ctx.rect(cx - r, cy - r * 0.6, r * 1.3, r * 1.6); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx - r * 0.6, cy - r); ctx.lineTo(cx + r, cy - r); ctx.lineTo(cx + r, cy + r * 0.6); ctx.stroke(); }
+  else if (kind === "folder") { ctx.moveTo(cx - r, cy - r * 0.6); ctx.lineTo(cx - r * 0.2, cy - r * 0.6); ctx.lineTo(cx, cy - r * 0.3); ctx.lineTo(cx + r, cy - r * 0.3); ctx.lineTo(cx + r, cy + r * 0.8); ctx.lineTo(cx - r, cy + r * 0.8); ctx.closePath(); ctx.stroke(); }
+  else if (kind === "spark") { for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2; ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); } ctx.stroke(); circle(cx, cy, 3); ctx.fill(); }
+  else if (kind === "nodes") { const p = [[cx - r, cy + r * 0.6], [cx, cy - r * 0.8], [cx + r, cy + r * 0.6]]; ctx.moveTo(...p[0]); ctx.lineTo(...p[1]); ctx.lineTo(...p[2]); ctx.stroke(); p.forEach(([a, b]) => { circle(a, b, 3.5); ctx.fill(); }); }
+  else if (kind === "check") { ctx.moveTo(cx - r, cy); ctx.lineTo(cx - r * 0.25, cy + r * 0.7); ctx.lineTo(cx + r, cy - r * 0.7); ctx.stroke(); }
+  ctx.restore();
+}
+
+// ---------- background ----------
+const R0 = rng(7);
+const STARS = Array.from({ length: 70 }, () => { const a = R0() * 6.28, d = Math.sqrt(R0()); return { a, d, r: 0.6 + R0() * 1.4, p: R0() * 6.28 }; });
+function background(t) {
+  const g = ctx.createRadialGradient(W * 0.5, H * 0.4, 100, W * 0.5, H * 0.5, W * 0.75);
+  g.addColorStop(0, C.bgHi); g.addColorStop(1, C.bg);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = C.dot;
+  for (let y = 30; y < H; y += 36) for (let x = 30 + ((y / 36) % 2) * 18; x < W; x += 36) { ctx.fillRect(x, y, 2, 2); }
+  // a large, faint moon arc in the top-right corner
+  ctx.strokeStyle = "rgba(179,139,63,0.10)"; ctx.lineWidth = 2;
+  circle(W + 60, -80, 420); ctx.stroke(); circle(W + 60, -80, 480); ctx.stroke();
+}
+
+const CRATERS = [[-0.32, -0.18, 0.16], [0.26, 0.26, 0.12], [0.08, -0.42, 0.08], [-0.12, 0.42, 0.09], [0.44, -0.1, 0.06]];
+// phase 0 = new moon, 1 = full
+function moon(x, y, r, phase = 1, shadowCol = C.navy) {
+  const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.1, x, y, r);
+  g.addColorStop(0, C.moonLight); g.addColorStop(0.75, C.moonMid); g.addColorStop(1, C.moonDark);
+  ctx.fillStyle = g; circle(x, y, r); ctx.fill();
+  for (const [cx, cy, cr] of CRATERS) { ctx.fillStyle = "rgba(150,138,110,0.18)"; circle(x + cx * r, y + cy * r, cr * r); ctx.fill(); }
+  if (phase < 1) {
+    ctx.save(); circle(x, y, r + 0.5); ctx.clip();
+    ctx.fillStyle = shadowCol; ctx.globalAlpha = 0.94; circle(x - r * 2.1 * easeIO(phase), y, r * 1.04); ctx.fill();
+    ctx.restore();
+  }
+}
+
+// The night-sky window: a navy disc with stars and the moon inside, on the light page.
+function nightWindow(x, y, R, t, phase, k = 1) {
+  ctx.save();
+  ctx.shadowColor = "rgba(22,32,61,0.25)"; ctx.shadowBlur = 40; ctx.shadowOffsetY = 14;
+  const g = ctx.createRadialGradient(x - R * 0.3, y - R * 0.3, R * 0.1, x, y, R);
+  g.addColorStop(0, C.navy2); g.addColorStop(1, C.navy);
+  ctx.fillStyle = g; circle(x, y, R * k); ctx.fill();
+  ctx.restore();
+  ctx.save(); circle(x, y, R * k); ctx.clip();
+  for (const s of STARS) { ctx.fillStyle = `rgba(245,240,226,${0.35 + 0.35 * Math.sin(t * 1.3 + s.p)})`; circle(x + Math.cos(s.a) * s.d * R, y + Math.sin(s.a) * s.d * R, s.r); ctx.fill(); }
+  const hg = ctx.createRadialGradient(x, y, R * 0.45, x, y, R * 0.95);
+  hg.addColorStop(0, "rgba(245,240,226,0.16)"); hg.addColorStop(1, "rgba(245,240,226,0)");
+  ctx.fillStyle = hg; circle(x, y, R); ctx.fill();
+  moon(x, y, R * 0.5, phase, C.navy);
+  ctx.restore();
+  ctx.strokeStyle = C.goldSoft; ctx.lineWidth = 3; circle(x, y, R * k); ctx.stroke();
+}
+
+// Chapter tracker, top right.
+const CHAPTERS = ["Architecture", "MCP tools", "Agent flow", "Context"];
+const CHAPTER_SCENES = ["arch", "talk", "flow", "context"];
+function chapters(current, a) {
+  // Only the chapters whose scenes are in this render (the short intro skips some).
+  const shown = CHAPTERS.filter((_, i) => !TL.length || TL.some((sc) => sc.id === CHAPTER_SCENES[i]));
+  const name = CHAPTERS[current];
+  withAlpha(a, () => {
+    let x = 1810;
+    for (let i = shown.length - 1; i >= 0; i--) {
+      const on = shown[i] === name;
+      ctx.font = `${on ? 700 : 500} 17px ${SANS}`; const w = ctx.measureText(shown[i]).width;
+      text(shown[i], x, 96, { size: 17, weight: on ? 700 : 500, color: on ? C.text : C.faint, align: "right" });
+      if (on) { ctx.fillStyle = C.gold; rrect(x - w, 106, w, 3, 2); ctx.fill(); }
+      x -= w + 34;
+      if (i > 0) { ctx.fillStyle = C.line; circle(x + 17, 90, 3); ctx.fill(); }
+    }
+  });
+}
+
+function heading(u, eyebrow, title) {
+  const a = ap(u, 0.05, 0.6);
+  withAlpha(a, () => {
+    const dx = (1 - a) * -24;
+    ctx.fillStyle = C.gold; rrect(110 + dx, 78, 34, 4, 2); ctx.fill();
+    text(eyebrow.toUpperCase(), 156 + dx, 86, { size: 15, weight: 700, color: C.gold, spacing: 3 });
+    text(title, 110 + dx, 146, { size: 48, weight: 700, color: C.text, spacing: -0.5 });
+  });
+}
+
+// ---------- scenes ----------
+function sceneWhatIs(u, D, T) {
+  const ph = easeIO(clamp((u - 0.3) / 2.2));
+  const k = easeBack(clamp(u / 0.9));
+  nightWindow(560, 500, 280, u, 0.15 + 0.85 * ph, k);
+  // an orbit with a small satellite
+  withAlpha(ap(u, 1.2, 0.8), () => {
+    ctx.save(); ctx.translate(560, 500); ctx.rotate(-0.35);
+    ctx.strokeStyle = "rgba(179,139,63,0.45)"; ctx.lineWidth = 2; ctx.setLineDash([3, 9]);
+    ctx.beginPath(); ctx.ellipse(0, 0, 360, 110, 0, 0, 6.29); ctx.stroke(); ctx.setLineDash([]);
+    const a = u * 0.9;
+    const sx = Math.cos(a) * 360, sy = Math.sin(a) * 110;
+    if (Math.sin(a) > 0 || Math.hypot(sx, sy) > 285) { ctx.fillStyle = C.gold; circle(sx, sy, 9); ctx.fill(); ctx.fillStyle = "#fff"; circle(sx, sy, 3.5); ctx.fill(); }
+    ctx.restore();
+  });
+  // title, letter by letter
+  const word = "Moon";
+  ctx.font = `800 132px ${SANS}`; let x = 980;
+  [...word].forEach((ch, i) => {
+    const a = ap(u, 0.6 + i * 0.09, 0.5);
+    withAlpha(a, () => text(ch, x, 400 + (1 - a) * 40, { size: 132, weight: 800, color: C.navy, spacing: -3 }));
+    ctx.font = `800 132px ${SANS}`; ctx.letterSpacing = "-3px"; x += ctx.measureText(ch).width; ctx.letterSpacing = "0px";
+  });
+  withAlpha(ap(u, 1.1, 0.6), () => {
+    ctx.fillStyle = C.gold; rrect(986, 430, 90 * ap(u, 1.1, 0.8), 5, 3); ctx.fill();
+    const lead = "A coding agent for VS Code, built on ";
+    text(lead, 984, 486, { size: 32, weight: 500, color: C.muted });
+    ctx.font = `500 32px ${SANS}`; const lw = ctx.measureText(lead).width;
+    text("TrueForge", 984 + lw, 486, { size: 32, weight: 700, color: C.gold });
+  });
+  // header: team on the left, event on the right
+  withAlpha(ap(u, 0.4, 0.6), () => {
+    moon(122, 84, 13, 1);
+    text("Team Simpletons", 146, 92, { size: 20, weight: 700, color: C.navy });
+    ctx.font = `700 20px ${SANS}`; const tw = ctx.measureText("Team Simpletons").width;
+    ctx.fillStyle = C.line; circle(146 + tw + 16, 85, 3); ctx.fill();
+    text("MNNIT Allahabad", 146 + tw + 32, 92, { size: 18, color: C.muted });
+    text("TrueFoundry Forge-a-thon  ·  Techfest 2026-27, IIT Bombay", 1810, 92, { size: 18, weight: 500, color: C.muted, align: "right" });
+    ctx.fillStyle = C.line; ctx.fillRect(110, 118, 1700, 1.5);
+  });
+  // a row of moon phases under the night window, filling one by one
+  for (let i = 0; i < 7; i++) {
+    const a = ap(u, 0.9 + i * 0.12, 0.4);
+    withAlpha(a, () => {
+      const x = 560 + (i - 3) * 62, y = 868;
+      ctx.save(); ctx.shadowColor = "rgba(22,32,61,0.15)"; ctx.shadowBlur = 6; ctx.shadowOffsetY = 2;
+      ctx.fillStyle = C.navy; circle(x, y, 17); ctx.fill(); ctx.restore();
+      moon(x, y, 14, [0.12, 0.24, 0.36, 0.5, 0.64, 0.8, 1][i], C.navy);
+    });
+  }
+  const rows = [["edits code inline", "Inline edits, reviewed hunk by hunk", "code"], ["works across", "Agent mode across the whole project", "nodes"], ["changes nothing", "Nothing lands until you approve it", "check"]];
+  rows.forEach(([cue, label, icon], i) => {
+    const a = ap(u, T(cue) - 0.15, 0.45);
+    withAlpha(a, () => card(984 + (1 - a) * 40, 530 + i * 86, 640, 70, { title: label, icon, titleSize: 24, hi: bump(u, T(cue) - 0.1, T(cue) + 1.6) }));
+  });
+  // roadmap
+  const r = ap(u, T("First, how") - 0.15, 0.5);
+  withAlpha(r, () => {
+    const y = 852;
+    card(984, y, 330, 64, { title: "1   How Moon works", titleSize: 21, hi: 1, fill: C.cream });
+    connector([[1326, y + 32], [1394, y + 32]], { k: ap(u, T("Then the live"), 0.5), color: C.faint, flow: ap(u, T("Then the live"), 0.5), t: u });
+    withAlpha(ap(u, T("Then the live"), 0.5), () => card(1404, y, 220, 64, { title: "2   Live demo", titleSize: 21 }));
+  });
+}
+
+// Fig. 1 of the write-up, redrawn; the camera follows the part being explained.
+function sceneArch(u, D, T) {
+  heading(u, "How Moon works", "Architecture on TrueForge");
+  chapters(0, ap(u, 0.3));
+  const tUI = T("The Moon panel"), tHost = T("thin Visual"), tCore = T("the logic lives");
+  const tSend = T("Core sends"), tBack = T("streams events"), tOnly = T("Only TrueForge"), tClaude = T("Claude first"), tDS = T("DeepSeek");
+  const tMcp = T("The agent edits"), tHidden = T("hidden copy"), tAccept = T("only accepted");
+
+  // camera keyframes: [time, centreX, centreY, zoom]
+  const keys = [[0, 960, 590, 0.96], [tUI, 520, 470, 1.32], [tCore, 520, 580, 1.3], [tSend, 860, 520, 1.12], [tOnly, 1360, 520, 1.25], [tMcp, 640, 720, 1.25], [tAccept + 1.2, 960, 590, 0.96]];
+  let cam = keys[0].slice(1);
+  for (let i = 1; i < keys.length; i++) {
+    const k = easeIO(clamp((u - keys[i][0] + 0.2) / 1.0));
+    cam = cam.map((v, j) => lerp(v, keys[i][j + 1], k));
+  }
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, 196, W, 760); ctx.clip();
+  ctx.translate(W / 2, 590); ctx.scale(cam[2], cam[2]); ctx.translate(-cam[0], -cam[1]);
+
+  // VS Code side
+  withAlpha(ap(u, tUI - 0.4), () => {
+    ctx.fillStyle = "rgba(223,230,243,0.55)"; rrect(110, 225, 800, 575, 20); ctx.fill();
+    ctx.strokeStyle = "#c9d4e8"; ctx.lineWidth = 1.5; rrect(110, 225, 800, 575, 20); ctx.stroke();
+    text("VS CODE  ·  MOON EXTENSION", 136, 262, { size: 14, weight: 700, color: C.blue, spacing: 2 });
+  });
+  const pop = (s) => ap(u, s, 0.45);
+  withAlpha(pop(tUI), () => {
+    card(134, 282, 370, 96, { title: "Moon panel", sub: "chat, tool log, context card, review", icon: "panel", hi: bump(u, tUI, tHost) + bump(u, tSend - 0.2, tSend + 0.5), subSize: 15 });
+    card(516, 282, 370, 96, { title: "Editor", sub: "inline diff, Accept / Reject per hunk", icon: "code", hi: bump(u, tUI, tHost), subSize: 15 });
+  });
+  withAlpha(pop(tHost), () => card(134, 396, 752, 66, { title: "Extension host", sub: null, icon: "layers", hi: bump(u, tHost, tCore) }));
+  withAlpha(pop(tHost), () => text("thin VS Code layer: inline edit, agent run, review, undo", 860, 436, { size: 16, color: C.muted, align: "right" }));
+  withAlpha(pop(tCore), () => {
+    card(134, 480, 752, 216, { hi: bump(u, tCore, tSend), fill: C.cream });
+    text("Moon core", 158, 514, { size: 22, weight: 700 });
+    text("TypeScript, never imports vscode, 154 unit tests", 862, 514, { size: 15, color: C.muted, align: "right" });
+  });
+  const minis = [["TrueForge client", "sessions, turns, events"], ["Model router", "watchdog, circuit breaker"], ["Project map", "tree-sitter, PageRank"],
+    ["Hidden copy", "hunks, apply, undo"], ["Verification", "test records"], ["Safety", "path, secret, command"]];
+  minis.forEach(([t1, t2], i) => {
+    const x = 150 + (i % 3) * 245, y = 530 + Math.floor(i / 3) * 80;
+    let hi = 0;
+    if (i === 0) hi = bump(u, tSend, tBack + 1.2);
+    if (i === 1) hi = bump(u, tOnly, tDS + 1.2);
+    if (i === 3) hi = bump(u, tHidden, tAccept + 0.8);
+    const a = ap(u, tCore + 0.12 * i, 0.4);
+    withAlpha(a, () => card(x, y + (1 - a) * 14, 229, 70, { title: t1, sub: t2, hi, titleSize: 18, subSize: 14 }));
+  });
+  withAlpha(pop(tCore + 0.9), () => card(134, 716, 752, 70, { title: "Moon MCP server on 127.0.0.1", sub: "17 agent tools  ·  new token each start", icon: "plug", hi: bump(u, tMcp, tHidden + 0.8) }));
+
+  // TrueForge
+  withAlpha(pop(tSend - 0.2), () => {
+    card(1010, 285, 380, 500, { eyebrow: "Agent runtime", title: "TrueForge 0.184.2", sub: "local mode, port 8790", hi: bump(u, tSend + 0.5, tOnly + 0.3) + bump(u, tMcp, tMcp + 0.9), fill: C.cream, titleSize: 28 });
+    const items = ["Agent loop (moon-agent.json)", "Tool approval pauses", "Scout subagent", "Compaction at 80% of window", "Deferred tool loading", "Sessions stored in SQLite", "Retries and timeouts"];
+    items.forEach((s, i) => withAlpha(ap(u, tSend + 0.25 + i * 0.1, 0.35), () => {
+      ctx.strokeStyle = C.gold; ctx.lineWidth = 2.2; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(1036, 432 + i * 48); ctx.lineTo(1042, 438 + i * 48); ctx.lineTo(1052, 426 + i * 48); ctx.stroke();
+      text(s, 1064, 438 + i * 48, { size: 19, color: C.text });
+    }));
+  });
+  const kSend = ap(u, tSend, 0.6), kBack = ap(u, tBack, 0.6);
+  connector([[912, 548], [1004, 548]], { k: kSend, color: C.blue, flow: bump(u, tSend, tBack + 0.6), t: u });
+  connector([[1008, 600], [916, 600]], { k: kBack, color: C.blue, flow: bump(u, tBack, tOnly), t: u });
+  withAlpha(kSend, () => text("turns", 958, 534, { size: 14, weight: 600, color: C.blue, align: "center" }));
+  withAlpha(kBack, () => text("events", 962, 626, { size: 14, weight: 600, color: C.blue, align: "center" }));
+  pulse([[319, 378], [319, 396], [319, 462], [264, 530], [264, 548], [1004, 548]], clamp((u - tSend) / 1.3));
+  pulse([[1008, 600], [264, 600], [264, 462], [319, 378]], clamp((u - tBack) / 1.3));
+  stepBadge(958, 500, 1, ap(u, tSend + 0.4, 0.4));
+  stepBadge(962, 660, 2, ap(u, tBack + 0.4, 0.4));
+
+  // models
+  withAlpha(pop(tOnly - 0.1), () => card(1490, 650, 320, 135, { eyebrow: "Rule", title: "Only TrueForge calls a model", sub: "Moon never calls a provider", hi: bump(u, tOnly, tClaude), titleSize: 19 }));
+  withAlpha(pop(tClaude - 0.3), () => {
+    card(1490, 300, 320, 130, { eyebrow: "Main model", title: "Claude Sonnet 5.5", sub: "Anthropic API", hi: bump(u, tClaude, tDS) });
+    connector([[1392, 365], [1484, 365]], { k: ap(u, tClaude - 0.3, 0.5), color: C.blue, flow: bump(u, tClaude, tDS), t: u });
+  });
+  pulse([[1392, 365], [1484, 365]], clamp((u - tClaude) / 0.8));
+  stepBadge(1438, 330, 3, ap(u, tClaude + 0.3, 0.4));
+  withAlpha(pop(tDS - 0.3), () => {
+    card(1490, 470, 320, 150, { eyebrow: "Backup model", title: "DeepSeek V4.1 Flash", sub: "Azure AI Foundry", sub2: "OpenAI-compatible", hi: bump(u, tDS, tMcp), dashed: true });
+    connector([[1392, 545], [1484, 545]], { k: ap(u, tDS - 0.3, 0.5), color: C.faint, dash: [6, 6] });
+    text("if Claude fails", 1438, 530, { size: 13, color: C.muted, align: "center" });
+  });
+
+  // MCP calls, hidden copy, your files
+  const kMcp = ap(u, tMcp - 0.2, 0.6);
+  connector([[1008, 751], [892, 751]], { k: kMcp, color: C.blue, flow: bump(u, tMcp, tHidden + 0.6), t: u });
+  withAlpha(kMcp, () => text("MCP tool calls", 950, 736, { size: 14, weight: 600, color: C.blue, align: "center" }));
+  stepBadge(950, 790, 4, ap(u, tMcp + 0.3, 0.4));
+  pulse([[1008, 751], [892, 751], [299, 786], [299, 845]], clamp((u - tMcp) / 1.6));
+  withAlpha(ap(u, tHidden - 0.2), () => {
+    connector([[299, 788], [299, 840]], { k: ap(u, tHidden - 0.2, 0.4), color: C.blue, flow: bump(u, tHidden, tAccept), t: u });
+    text("edit_file, run_command", 314, 822, { size: 14, color: C.muted });
+    card(134, 845, 330, 84, { title: "Hidden copy", sub: "temp folder, deleted on Stop", icon: "copy", hi: bump(u, tHidden, tAccept + 0.4), dashed: true, subSize: 15 });
+  });
+  stepBadge(110, 845, 5, ap(u, tHidden + 0.2, 0.4));
+  withAlpha(ap(u, tAccept - 0.2), () => {
+    connector([[468, 887], [550, 887]], { k: ap(u, tAccept - 0.2, 0.4), color: C.gold, width: 2.5, flow: bump(u, tAccept, D + 2), t: u });
+    text("Apply", 509, 873, { size: 14, weight: 700, color: C.gold, align: "center" });
+    card(556, 845, 330, 84, { title: "Your workspace", sub: "only accepted hunks", icon: "folder", hi: bump(u, tAccept + 0.4, D + 2), subSize: 15 });
+  });
+  pulse([[468, 887], [550, 887]], clamp((u - tAccept - 0.3) / 0.7));
+  stepBadge(509, 920, 6, ap(u, tAccept + 0.5, 0.4));
+  ctx.restore();
+}
+
+// A small rounded label (event names, tool names, tags).
+function pill(x, y, label, { bg = C.card, fg = C.text, border = C.line, size = 15, font = MONO, align = "left" } = {}) {
+  ctx.font = `500 ${size}px ${font}`;
+  const w = ctx.measureText(label).width + 26, h = size + 16;
+  const x0 = align === "center" ? x - w / 2 : align === "right" ? x - w : x;
+  ctx.save(); ctx.shadowColor = "rgba(22,32,61,0.08)"; ctx.shadowBlur = 8; ctx.shadowOffsetY = 2;
+  ctx.fillStyle = bg; rrect(x0, y - h / 2, w, h, h / 2); ctx.fill(); ctx.restore();
+  ctx.strokeStyle = border; ctx.lineWidth = 1.2; rrect(x0, y - h / 2, w, h, h / 2); ctx.stroke();
+  text(label, x0 + 13, y + size * 0.36, { size, font, weight: 500, color: fg });
+  return w;
+}
+
+function lock(x, y, s = 12, color = C.gold) {
+  ctx.save(); ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x, y - s * 0.35, s * 0.42, Math.PI, 0); ctx.stroke();
+  rrect(x - s * 0.6, y - s * 0.35, s * 1.2, s * 0.95, 3); ctx.fill(); ctx.restore();
+}
+
+// Part 3: how Moon talks to TrueForge, and the MCP tools.
+function sceneTalk(u, D, T) {
+  heading(u, "How Moon works", "Moon talks to TrueForge");
+  chapters(1, ap(u, 0.3));
+  const tSdk = T("SDK"), tTurns = T("turns in"), tEvents = T("events out"), tTools = T("seventeen"), tFree = T("seventeen") + 1.0, tPause = T("pause for");
+  withAlpha(ap(u, tSdk - 0.6), () => card(150, 250, 430, 190, { eyebrow: "VS Code extension", title: "Moon", sub: "TrueForge TypeScript SDK", sub2: "one session per chat", icon: "panel", titleSize: 30, hi: bump(u, tSdk, tTurns + 0.6) }));
+  withAlpha(ap(u, tSdk - 0.3), () => card(1340, 250, 430, 190, { eyebrow: "Agent runtime", title: "TrueForge session", sub: "runs the agent loop", sub2: "moon-agent.json", icon: "spark", titleSize: 30, fill: C.cream, hi: bump(u, tTurns, tEvents + 2.5) }));
+  // turns go right
+  const kT = ap(u, tTurns - 0.2, 0.5);
+  connector([[600, 300], [1320, 300]], { k: kT, color: C.blue, flow: bump(u, tTurns, tEvents + 0.4), t: u });
+  withAlpha(kT, () => { pill(700, 300, "createSession"); pill(1000, 300, "sendTurn"); });
+  // events stream left, one chip after another
+  const kE = ap(u, tEvents - 0.2, 0.5);
+  connector([[1320, 395], [600, 395]], { k: kE, color: C.blue, flow: bump(u, tEvents, tTools + 1), t: u });
+  const evs = ["text delta", "tool call", "tool result", "approval required", "turn end"];
+  evs.forEach((e, i) => {
+    const s = tEvents + i * 0.42, k = clamp((u - s) / 1.7);
+    if (k <= 0 || k >= 1) return;
+    withAlpha(Math.min(1, k * 6, (1 - k) * 6), () => pill(lerp(1250, 640, easeIO(k)), 395, e, { align: "center", bg: e === "approval required" ? C.cream : C.card, border: e === "approval required" ? C.gold : C.line }));
+  });
+  withAlpha(kE, () => text("streams to the panel: text, live tool log, approval cards", 960, 448, { size: 16, color: C.muted, align: "center" }));
+
+  // the 17 tools in four groups
+  withAlpha(ap(u, tTools - 0.2), () => {
+    text("17 MCP tools", 110, 528, { size: 26, weight: 700 });
+    text("served by Moon on 127.0.0.1, new token each start", 290, 528, { size: 17, color: C.muted });
+  });
+  const groups = [
+    ["Looking around", ["list_files", "search_text", "find_definition", "find_usages", "read_file", "get_errors"], "capped output, no pause", 0],
+    ["Changing the hidden copy", ["edit_file", "list_pending_changes"], "real files untouched", 0],
+    ["Acting on your project", ["run_command", "apply_changes", "undo_applied_run"], "TrueForge approval", 2],
+    ["Planning and memory", ["report_context", "propose_plan", "work_log", "save_summary", "list_past_sessions", "read_past_session"], "plan and recall pause", 1],
+  ];
+  groups.forEach(([name, tools, foot, pause], i) => {
+    const x = 110 + i * 430, y = 552, a = ap(u, tTools + i * 0.18, 0.45);
+    const hi = i < 2 ? bump(u, tFree, tPause) : bump(u, tPause, D + 2) * (pause === 2 ? 1 : 0.6);
+    withAlpha(a, () => {
+      card(x, y + (1 - a) * 16, 410, 310, { eyebrow: name, hi, fill: pause === 2 ? C.cream : C.card });
+      tools.forEach((tl, j) => text(tl, x + 24, y + 92 + j * 31 + (1 - a) * 16, { size: 17, font: MONO, color: C.text }));
+      const fy = y + 282 + (1 - a) * 16;
+      if (pause) { lock(x + 32, fy, 13); text(foot, x + 50, fy + 6, { size: 16, weight: 700, color: C.gold }); }
+      else text(foot, x + 24, fy + 6, { size: 16, color: C.muted });
+    });
+  });
+}
+
+// Part 4: Fig. 2, one agent run (Task B), step by step.
+const FLOW = [
+  ["Request", "typed in the Moon panel", "no files named", 0],
+  ["Session start", "hidden copy, project map", "and AGENTS.md go in", 0],
+  ["Scout subagent", "look-only tools, own thread", "up to 6 files + reasons", 1],
+  ["report_context", "context card: files,", "reasons, budget bar", 0],
+  ["edit_file", "code, tests and docs", "edited in the copy", 0],
+  ["run_command", "approval card, then", "pytest in the copy", 1],
+  ["apply_changes", "approval opens review:", "hunks, tests, impact", 1],
+  ["Apply, then Undo", "accepted hunks only;", "Undo this whole run", 0],
+];
+function sceneFlow(u, D, T) {
+  heading(u, "How Moon works", "One agent run: Task B");
+  chapters(2, ap(u, 0.3));
+  const st = [T("The request"), T("A scout") - 0.45, T("A scout") + 0.1, T("context card"), T("The agent edits"), T("runs pytest"), T("Apply changes"), T("one click")];
+  const tLoop = T("fixes failures"), tStop = T("Stop leaves");
+  const pos = (i) => (i < 4 ? [110 + i * 440, 245] : [110 + (7 - i) * 440, 485]);
+  const W4 = 380, H4 = 138;
+  FLOW.forEach(([title, s1, s2, tf], i) => {
+    const [x, y] = pos(i);
+    const a = ap(u, st[i] - 0.15, 0.4);
+    const next = i < 7 ? st[i + 1] : D + 2;
+    withAlpha(a, () => {
+      card(x, y + (1 - a) * 14, W4, H4, { eyebrow: tf ? (i === 2 ? "TrueForge subagent" : "TrueForge approval") : `Step ${i + 1}`, title, sub: s1, sub2: s2, hi: bump(u, st[i], next + 0.1), fill: tf ? C.cream : C.card, titleSize: 22, subSize: 15 });
+      stepBadge(x + W4 - 8, y + 8 + (1 - a) * 14, i + 1, a);
+    });
+  });
+  // connectors and the travelling packet
+  const link = (i) => {
+    const [x, y] = pos(i), [x2, y2] = pos(i + 1);
+    if (i < 3) return [[x + W4 + 4, y + H4 / 2], [x2 - 6, y2 + H4 / 2]];
+    if (i === 3) return [[x + W4 / 2, y + H4 + 4], [x2 + W4 / 2, y2 - 8]];
+    return [[x - 4, y + H4 / 2], [x2 + W4 + 6, y2 + H4 / 2]];
+  };
+  for (let i = 0; i < 7; i++) {
+    const k = ap(u, st[i + 1] - 0.35, 0.35);
+    connector(link(i), { k, color: C.faint, flow: bump(u, st[i + 1] - 0.3, st[i + 1] + 0.8), t: u });
+    pulse(link(i), clamp((u - st[i + 1] + 0.4) / 0.45));
+  }
+  // tests fail: fix again
+  const kl = ap(u, tLoop - 0.2, 0.5);
+  if (kl > 0) {
+    ctx.save(); ctx.strokeStyle = C.gold; ctx.lineWidth = 2.5; ctx.setLineDash([6, 6]); ctx.lineDashOffset = -u * 30;
+    ctx.beginPath(); ctx.moveTo(1180, 480); ctx.bezierCurveTo(1180, 420, 1620, 420, 1620, 480 - 0 * kl); ctx.stroke(); ctx.restore();
+    withAlpha(kl, () => { ctx.fillStyle = C.gold; ctx.beginPath(); ctx.moveTo(1620, 482); ctx.lineTo(1612, 468); ctx.lineTo(1628, 468); ctx.closePath(); ctx.fill();
+      pill(1400, 428, "tests fail: fix and run again (2 tries, then ask)", { align: "center", font: SANS, size: 14, bg: C.cream, border: C.gold }); });
+  }
+  // Stop
+  withAlpha(ap(u, tStop - 0.2, 0.5), () => {
+    const hi = bump(u, tStop, D + 2);
+    ctx.save(); ctx.fillStyle = mix("#ffffff", "#fbefe9", hi); rrect(110, 690, 1700, 150, 14); ctx.fill();
+    ctx.strokeStyle = "#c06a55"; ctx.lineWidth = 2; ctx.setLineDash([8, 6]); rrect(110, 690, 1700, 150, 14); ctx.stroke(); ctx.restore();
+    ctx.fillStyle = "#c06a55"; rrect(140, 722, 30, 30, 6); ctx.fill();
+    text("Stop, at any step", 186, 746, { size: 24, weight: 700 });
+    const acts = ["kill the command and its processes", "cancel the TrueForge turn", "delete the hidden copy", "show \"Stopped\""];
+    let x = 140;
+    acts.forEach((s, i) => withAlpha(ap(u, tStop + 0.2 + i * 0.2, 0.3), () => { x += pill(x, 796, `${i + 1}  ${s}`, { font: SANS, size: 16 }) + 14; }));
+    withAlpha(ap(u, tStop + 1.0, 0.4), () => text("nothing half-applied  ·  cancel eval 6 / 6, 0 to 29 ms", 1780, 746, { size: 18, weight: 600, color: "#a3523f", align: "right" }));
+  });
+}
+
+// Part 5: Fig. 3, how context is selected.
+function sceneContext(u, D, T) {
+  heading(u, "How Moon works", "How context is selected");
+  chapters(3, ap(u, 0.3));
+  const tIn = T("Flask is"), tRules = T("project rules up"), tMap = T("and a project map"), tLink = T("link by"), tRank = T("PageRank"), tPack = T("ten percent");
+  const tMent = T("Mentions"), tSafe = T("a safety"), tRead = T("the agent reads more"), tComp = T("compacts"), tScout = T("A scout"), tRep = T("report context"), tCard = T("context card");
+  const keys = [[0, 960, 575, 0.97], [tIn + 0.4, 560, 520, 1.12], [tScout - 0.2, 1450, 520, 1.12], [tRead - 0.1, 1200, 520, 1.15], [tComp + 1.0, 960, 575, 0.97]];
+  let cam = keys[0].slice(1);
+  for (let i = 1; i < keys.length; i++) { const k = easeIO(clamp((u - keys[i][0] + 0.2) / 0.9)); cam = cam.map((v, j) => lerp(v, keys[i][j + 1], k)); }
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 196, W, 760); ctx.clip();
+  ctx.translate(W / 2, 575); ctx.scale(cam[2], cam[2]); ctx.translate(-cam[0], -cam[1]);
+
+  const heads = [["Inputs", 110, tIn - 0.3], ["Moon core builds, no model call", 450, tRules - 0.3], ["Model window, one session", 1010, tRules], ["Agent picks, Moon shows", 1420, tScout - 0.3]];
+  heads.forEach(([h, x, s]) => withAlpha(ap(u, s), () => text(h.toUpperCase(), x, 238, { size: 14, weight: 700, color: C.blue, spacing: 2 })));
+  // inputs
+  const ins = [["AGENTS.md / CLAUDE.md", "read if present"], ["User request", "words weighted by rarity"], ["Project files", "tree-sitter tags, cached"], ["@file, @symbol", "picked in the panel"]];
+  const iy = [258, 356, 454, 552];
+  ins.forEach(([t1, t2], i) => withAlpha(ap(u, tIn + i * 0.12, 0.4), () => card(110, iy[i], 300, 80, { title: t1, sub: t2, titleSize: 19, subSize: 15, hi: i === 0 ? bump(u, tRules, tMap) : i < 3 ? bump(u, tMap, tPack + 0.5) : bump(u, tMent, tSafe) })));
+  // core
+  withAlpha(ap(u, tRules - 0.1), () => {
+    card(450, 258, 510, 80, { title: "Project rules", sub: "up to 2k tokens; guidance, never permission", titleSize: 20, subSize: 15, hi: bump(u, tRules, tMap), fill: C.cream });
+    connector([[412, 298], [446, 298]], { k: 1, color: C.faint });
+  });
+  withAlpha(ap(u, tMap - 0.1), () => {
+    card(450, 356, 510, 176, { hi: bump(u, tMap, tMent), fill: C.cream });
+    text("Project map", 472, 390, { size: 20, weight: 700 });
+    text("ranked and budgeted", 940, 390, { size: 15, color: C.muted, align: "right" });
+    const lines = [["1", "files linked by the names they use", tLink], ["2", "PageRank, started from your request", tRank], ["3", "exact names count most", tRank + 0.6], ["4", "packed into 10% of window, 1k to 8k", tPack]];
+    lines.forEach(([n, s, at], j) => withAlpha(ap(u, at - 0.1, 0.35), () => { text(n, 474, 424 + j * 28, { size: 15, weight: 700, color: C.gold }); text(s, 494, 424 + j * 28, { size: 15, color: C.text }); }));
+    connector([[412, 396], [446, 420]], { k: 1, color: C.faint });
+    connector([[412, 494], [446, 470]], { k: 1, color: C.faint });
+    // tiny graph that ranks itself
+    const nodes = [[860, 430], [905, 455], [880, 500], [830, 480], [920, 505], [850, 520]];
+    const edges = [[0, 1], [0, 3], [1, 2], [3, 2], [2, 4], [5, 2], [1, 4]];
+    const ge = ap(u, tLink, 0.5), gr = ap(u, tRank, 0.8);
+    ctx.strokeStyle = C.faint; ctx.lineWidth = 1.2;
+    edges.forEach(([a, b]) => { withAlpha(ge, () => { ctx.beginPath(); ctx.moveTo(...nodes[a]); ctx.lineTo(...nodes[b]); ctx.stroke(); }); });
+    const rank = [0.5, 0.7, 1, 0.45, 0.6, 0.3];
+    nodes.forEach(([x, y], i) => { ctx.fillStyle = mix("#b9c4da", C.gold, gr * rank[i]); circle(x, y, 4 + 6 * gr * rank[i]); ctx.fill(); });
+  });
+  withAlpha(ap(u, tMent - 0.1), () => {
+    card(450, 552, 510, 80, { title: "Mentions", sub: "a file up to 6k tokens, a symbol up to 120 lines", titleSize: 20, subSize: 15, hi: bump(u, tMent, tSafe), fill: C.cream });
+    connector([[412, 592], [446, 592]], { k: 1, color: C.faint });
+  });
+  withAlpha(ap(u, tSafe - 0.1), () => {
+    const hi = bump(u, tSafe, tRead);
+    ctx.save(); ctx.fillStyle = mix("#ffffff", "#fbefe9", hi); rrect(110, 652, 850, 82, 14); ctx.fill();
+    ctx.strokeStyle = "#c06a55"; ctx.lineWidth = 1.5 + hi; ctx.setLineDash([7, 6]); rrect(110, 652, 850, 82, 14); ctx.stroke(); ctx.restore();
+    text("Safety filter on every input and every tool result", 134, 686, { size: 19, weight: 700 });
+    text("secrets redacted, hidden characters shown, file text marked as data, .env never read", 134, 714, { size: 15, color: C.muted });
+  });
+  // model window: a stack that fills, then compacts
+  const wx = 1010, wy = 258, ww = 360, wh = 476;
+  withAlpha(ap(u, tRules), () => {
+    ctx.save(); ctx.shadowColor = "rgba(22,32,61,0.08)"; ctx.shadowBlur = 16; ctx.shadowOffsetY = 5;
+    ctx.fillStyle = C.card; rrect(wx, wy, ww, wh, 14); ctx.fill(); ctx.restore();
+    ctx.strokeStyle = mix(C.line, C.gold, bump(u, tRead, D + 2)); ctx.lineWidth = 2; rrect(wx, wy, ww, wh, 14); ctx.stroke();
+  });
+  const comp = ap(u, tComp + 0.3, 0.8);
+  const toolH = lerp(0, 168, ap(u, tRead, 1.6)) * (1 - 0.55 * comp);
+  const segs = [
+    ["agent instructions + safety rules", 46, "#e9ecf3", tRules],
+    ["project rules", 38, "#eef2f9", tRules + 0.3],
+    ["project map  ·  10% (1k to 8k)", 76, C.goldSoft, tPack],
+    ["request + @mentions (up to 6k)", 58, C.blueSoft, tMent],
+  ];
+  let sy = wy + 8;
+  ctx.save(); rrect(wx, wy, ww, wh, 14); ctx.clip();
+  segs.forEach(([label, h, col, at]) => {
+    const a = ap(u, at, 0.45);
+    if (a > 0) withAlpha(a, () => { ctx.fillStyle = col; rrect(wx + 8, sy, ww - 16, h * a - 4, 8); ctx.fill(); text(label, wx + ww / 2, sy + h / 2 + 5, { size: 15, weight: label.startsWith("project map") ? 700 : 500, align: "center" }); });
+    sy += h * a;
+  });
+  if (toolH > 2) {
+    ctx.fillStyle = "#f3efe4"; rrect(wx + 8, sy, ww - 16, toolH - 4, 8); ctx.fill();
+    withAlpha(clamp(toolH / 120), () => {
+      text("tool results and replies", wx + ww / 2, sy + 28, { size: 15, weight: 700, align: "center" });
+      if (toolH > 110) ["read_file: 400 lines per call", "search: 50 hits per call", "command output: 12k chars"].forEach((s, j) => text(s, wx + ww / 2, sy + 56 + j * 24, { size: 14, color: C.muted, align: "center" }));
+    });
+    if (comp > 0 && comp < 1) withAlpha(Math.sin(comp * Math.PI), () => text("compacted", wx + ww / 2, sy + toolH - 14, { size: 14, weight: 700, color: C.gold, align: "center" }));
+  }
+  ctx.restore();
+  withAlpha(ap(u, tRead + 0.5), () => {
+    const ly = wy + wh * 0.8;
+    ctx.save(); ctx.strokeStyle = C.gold; ctx.lineWidth = 2.5; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.moveTo(wx, ly); ctx.lineTo(wx + ww, ly); ctx.stroke(); ctx.restore();
+    pill(wx + ww / 2, ly + 26, "TrueForge compaction at 80%", { align: "center", font: SANS, size: 14, bg: C.cream, border: C.gold });
+    text("window = TrueForge contextLength, or 50k", wx + ww / 2, wy + wh - 12, { size: 13, color: C.muted, align: "center" });
+  });
+  [[298, 300], [444, 350], [592, 420]].forEach(([y1, y2], i) => withAlpha(ap(u, [tRules, tPack, tMent][i] + 0.2), () => connector([[962, y1], [1006, y2]], { k: 1, color: C.faint })));
+  // agent side
+  withAlpha(ap(u, tScout - 0.1), () => {
+    card(1420, 258, 390, 140, { eyebrow: "TrueForge subagent", title: "Scout", sub: "own thread, look-only tools", sub2: "up to 6 files, a reason each", fill: C.cream, hi: bump(u, tScout, tRep) });
+    connector([[1372, 420], [1416, 340]], { k: 1, color: C.blue, flow: bump(u, tScout, tRep), t: u });
+  });
+  withAlpha(ap(u, tRep - 0.1), () => {
+    card(1420, 420, 390, 92, { title: "report_context", sub: "MCP tool; refuses files that do not exist", titleSize: 20, subSize: 15, hi: bump(u, tRep, tCard) });
+    connector([[1615, 400], [1615, 416]], { k: 1, color: C.blue });
+  });
+  pulse([[1615, 330], [1615, 466], [1615, 540]], clamp((u - tRep) / 1.0));
+  withAlpha(ap(u, tCard - 0.1), () => {
+    connector([[1615, 514], [1615, 534]], { k: 1, color: C.blue });
+    card(1420, 538, 390, 196, { hi: bump(u, tCard, D + 2) });
+    text("Context card", 1442, 572, { size: 19, weight: 700 });
+    [["src/flask/cli.py", "commands live here"], ["tests/test_cli.py", "CLI tests"], ["docs/cli.rst", "command docs"]].forEach(([f, r], j) => withAlpha(ap(u, tCard + 0.15 * j, 0.3), () => {
+      ctx.strokeStyle = C.gold; ctx.lineWidth = 2.2; ctx.beginPath(); ctx.moveTo(1444, 598 + j * 32); ctx.lineTo(1450, 604 + j * 32); ctx.lineTo(1460, 592 + j * 32); ctx.stroke();
+      text(f, 1470, 604 + j * 32, { size: 14, font: MONO }); text(r, 1790, 604 + j * 32, { size: 13, color: C.muted, align: "right" });
+    }));
+    const bk = ap(u, tCard + 0.4, 0.8);
+    rrect(1442, 700, 346, 12, 6); ctx.fillStyle = "#eee9dc"; ctx.fill();
+    rrect(1442, 700, 346 * 0.74 * bk, 12, 6); ctx.fillStyle = C.gold; ctx.fill();
+    text("map 5.9k / 8k", 1788, 692, { size: 13, weight: 600, color: C.muted, align: "right" });
+  });
+  ctx.restore();
+}
+
+// Part 6: on to the live demo.
+function sceneDemo(u, D, T) {
+  const k = easeBack(clamp(u / 0.8));
+  nightWindow(960, 430, 190, u, clamp(0.4 + u * 0.4), k);
+  withAlpha(ap(u, 0.4, 0.6), () => text("Live demo", 960, 720, { size: 72, weight: 800, color: C.navy, align: "center", spacing: -1 }));
+  withAlpha(ap(u, 0.7, 0.5), () => text("Flask 3.1.3  ·  commit 22d92470", 960, 770, { size: 24, color: C.muted, align: "center" }));
+  const tasks = ["Task A  ·  Inline edit", "Task B  ·  Agent mode", "Task C  ·  Resilience"];
+  tasks.forEach((s, i) => withAlpha(ap(u, 1.0 + i * 0.25, 0.4), () => card(450 + i * 350, 820, 320, 70, { title: s, titleSize: 21, hi: 0.4 })));
+}
+
+// ---------- closing slides (outro.json) ----------
+// How Moon will be deployed: four steps on top, the deployed shape underneath.
+function sceneDeploy(u, D, T) {
+  heading(u, "What comes next", "How we will deploy Moon");
+  const steps = [
+    ["we ship", "Package", "A VSIX on the VS Code Marketplace", "and Open VSX", "copy"],
+    ["each team", "One TrueForge per team", "On the team's TrueFoundry cluster;", "models and keys set once", "layers"],
+    ["developers install", "Install and connect", "Each developer installs Moon and", "points it at that TrueForge", "plug"],
+    ["swapping", "Swap models by config", "A new model is a config change,", "never a code change", "check"],
+  ];
+  steps.forEach(([cue, title, sub, sub2, icon], i) => {
+    const a = ap(u, T(cue) - 0.2, 0.45);
+    withAlpha(a, () => {
+      card(110 + i * 425, 230 + (1 - a) * 30, 390, 150, { eyebrow: `Step ${i + 1}`, title, sub, sub2, subSize: 15, hi: bump(u, T(cue) - 0.1, i < 3 ? T(steps[i + 1][0]) - 0.1 : D) });
+      if (i < 3) connector([[110 + i * 425 + 394, 305], [110 + (i + 1) * 425 - 4, 305]], { k: ap(u, T(steps[i + 1][0]) - 0.3, 0.4), color: C.faint });
+    });
+  });
+  // The deployed shape: developers -> TrueForge on TrueFoundry -> models.
+  const dA = ap(u, T("each team"), 0.5);
+  withAlpha(dA, () => {
+    ctx.fillStyle = C.cream; rrect(110, 450, 1700, 420, 18); ctx.fill();
+    ctx.strokeStyle = C.line; ctx.lineWidth = 1.5; rrect(110, 450, 1700, 420, 18); ctx.stroke();
+    text("THE DEPLOYED SHAPE", 140, 490, { size: 14, weight: 700, color: C.gold, spacing: 2 });
+    // centre: TrueForge
+    ctx.strokeStyle = C.gold; ctx.setLineDash([7, 6]); ctx.lineWidth = 1.5; rrect(720, 520, 480, 300, 16); ctx.stroke(); ctx.setLineDash([]);
+    text("TrueFoundry cluster", 960, 552, { size: 15, weight: 700, color: C.gold, align: "center" });
+    card(760, 580, 400, 110, { title: "TrueForge", sub: "agent loop  ·  sessions  ·  approvals", icon: "spark", hi: 0.6, titleSize: 26 });
+    card(760, 710, 400, 80, { title: "Model gateway", sub: "keys stored here, never in Moon", icon: "layers", titleSize: 20, subSize: 14 });
+    // right: models
+    card(1400, 560, 380, 90, { title: "Claude", sub: "main model", icon: "nodes", titleSize: 22 });
+    card(1400, 680, 380, 90, { title: "DeepSeek on Azure", sub: "automatic backup", icon: "nodes", titleSize: 22 });
+    connector([[1164, 750], [1280, 750], [1280, 605], [1394, 605]], { k: ap(u, T("each team") + 0.6, 0.6), color: C.faint });
+    connector([[1164, 750], [1394, 725]], { k: ap(u, T("each team") + 0.6, 0.6), color: C.faint });
+  });
+  // left: developers with Moon
+  const devA = ap(u, T("developers install") - 0.1, 0.5);
+  withAlpha(devA, () => {
+    ["Developer 1", "Developer 2", "Developer 3"].forEach((n, i) => card(140, 520 + i * 105, 400, 85, { title: n, sub: "VS Code + Moon", icon: "panel", titleSize: 20, subSize: 14 }));
+    for (let i = 0; i < 3; i++) {
+      const pts = [[544, 562 + i * 105], [640, 562 + i * 105], [640, 635], [754, 635]];
+      connector(pts, { k: ap(u, T("developers install") + 0.3 + i * 0.15, 0.5), color: C.faint, flow: bump(u, T("developers install") + 0.6, D), t: u });
+      pulse(pts, clamp((u - T("developers install") - 0.8 - i * 0.35) / 1.4));
+    }
+  });
+}
+
+// Thank-you slide.
+function sceneThanks(u, D, T) {
+  const k = easeBack(clamp(u / 0.8));
+  nightWindow(960, 400, 200, u, clamp(0.55 + u * 0.25), k);
+  withAlpha(ap(u, 0.35, 0.6), () => text("Thank you", 960, 720 + (1 - ap(u, 0.35, 0.6)) * 30, { size: 88, weight: 800, color: C.navy, align: "center", spacing: -1 }));
+  withAlpha(ap(u, 0.7, 0.5), () => {
+    ctx.fillStyle = C.gold; rrect(960 - 45, 752, 90, 5, 3); ctx.fill();
+    text("Moon orbits your code, and lands only when you say yes.", 960, 808, { size: 28, color: C.muted, align: "center" });
+  });
+  withAlpha(ap(u, 1.0, 0.5), () => {
+    ctx.font = `700 22px ${SANS}`;
+    const l = "Team Simpletons", r = "MNNIT Allahabad", m = "TrueFoundry Forge-a-thon  ·  Techfest 2026-27";
+    const lw = ctx.measureText(l).width; ctx.font = `500 22px ${SANS}`; const rw = ctx.measureText(r).width;
+    const x0 = 960 - (lw + 32 + rw) / 2;
+    moon(x0 - 26, 872, 12, 1);
+    text(l, x0, 880, { size: 22, weight: 700, color: C.navy });
+    ctx.fillStyle = C.line; circle(x0 + lw + 16, 873, 3); ctx.fill();
+    text(r, x0 + lw + 32, 880, { size: 22, color: C.muted });
+    text(m, 960, 924, { size: 18, color: C.faint, align: "center" });
+  });
+}
+
+const SCENES = { whatis: sceneWhatIs, arch: sceneArch, talk: sceneTalk, flow: sceneFlow, context: sceneContext, demo: sceneDemo, deploy: sceneDeploy, thanks: sceneThanks };
+
+// ---------- timeline and captions ----------
+let TL = [];
+const FADE = 0.45;
+window.setTimeline = (tl) => { TL = tl; };
+
+function phraseTimer(sc) {
+  return (phrase) => {
+    const i = sc.text.indexOf(phrase);
+    if (i < 0) return sc.voiceAt - sc.start;
+    return sc.voiceAt - sc.start + sc.voiceLen * (i / sc.text.length);
+  };
+}
+
+function chunks(s) {
+  const parts = s.match(/[^.:]+[.:]?/g).map((p) => p.trim()).filter(Boolean);
+  const out = [];
+  for (const p of parts) {
+    if (p.length <= 82) { out.push(p); continue; }
+    let cur = "";
+    for (const w of p.split(" ")) { if ((cur + " " + w).trim().length > 70 && cur) { out.push(cur); cur = w; } else cur = (cur + " " + w).trim(); }
+    if (cur) out.push(cur);
+  }
+  return out;
+}
+function caption(sc, t) {
+  const v = t - sc.voiceAt;
+  if (v < 0 || v > sc.voiceLen + 0.3) return;
+  const cs = chunks(sc.text), total = cs.reduce((n, c) => n + c.length, 0);
+  let acc = 0, idx = 0;
+  for (let i = 0; i < cs.length; i++) { if (v / sc.voiceLen >= acc / total) idx = i; acc += cs[i].length; }
+  const s = cs[idx];
+  const a = clamp(v / 0.2) * (1 - clamp((v - sc.voiceLen) / 0.3));
+  withAlpha(a, () => {
+    ctx.font = `500 27px ${SANS}`;
+    const w = ctx.measureText(s).width + 64;
+    ctx.save(); ctx.shadowColor = "rgba(22,32,61,0.12)"; ctx.shadowBlur = 16; ctx.shadowOffsetY = 4;
+    ctx.fillStyle = C.navy; rrect(W / 2 - w / 2, 974, w, 52, 26); ctx.fill(); ctx.restore();
+    text(s, W / 2, 1009, { size: 27, color: "#f5f1e6", align: "center" });
+  });
+}
+
+window.renderAt = (t) => {
+  background(t);
+  for (const sc of TL) {
+    const u = t - sc.start;
+    if (u < -0.01 || u > sc.dur + FADE) continue;
+    const a = clamp(u / FADE) * (1 - clamp((u - sc.dur) / FADE));
+    withAlpha(a, () => SCENES[sc.id](u, sc.dur, phraseTimer(sc)));
+  }
+  for (const sc of TL) caption(sc, t);
+  const end = TL.length ? TL[TL.length - 1].start + TL[TL.length - 1].dur : 1e9;
+  const f = clamp((t - end) / FADE);
+  if (f > 0) { ctx.fillStyle = `rgba(244,242,236,${f})`; ctx.fillRect(0, 0, W, H); }
+};
+
+window.ready = (async () => {
+  await document.fonts.ready;
+  await Promise.all(["400 30px Inter", "500 30px Inter", "600 30px Inter", "700 30px Inter", "800 30px Inter", '500 20px "JetBrains Mono"'].map((f) => document.fonts.load(f, "Moon")));
+  return true;
+})();
+
+// Preview in a normal browser: open intro.html and it plays with a guessed timeline (no voice).
+if (!location.search.includes("render")) {
+  const demo = [
+    { id: "whatis", dur: 12, text: "Moon is a coding agent for Visual Studio Code. It edits code inline, works across a whole project in agent mode, and never changes a file until you approve it. First, a quick look at how Moon works. Then we go to the live demo." },
+    { id: "arch", dur: 22, text: "This is the architecture. The Moon panel and the editor sit on a thin Visual Studio Code layer, and all the logic lives in Moon core. Core sends each turn to TrueForge, which runs the agent loop and streams events back. Only TrueForge calls a model: Claude first, and DeepSeek on Azure as the backup. The agent edits a hidden copy through Moon's MCP tools, and only the hunks you accept reach your files." },
+  ];
+  let s = 0; TL = demo.map((d) => { const sc = { ...d, start: s, voiceAt: s + 0.8, voiceLen: d.dur - 1.5 }; s += d.dur; return sc; });
+  const t0 = performance.now();
+  const loop = () => { renderAt(((performance.now() - t0) / 1000) % (s + 1)); requestAnimationFrame(loop); };
+  window.ready.then(loop);
+}
+</script>
+</body>
+</html>

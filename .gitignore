@@ -37,3 +37,7 @@ Thumbs.db
 
 # Reference clones of other projects (read-only, never committed)
 reference/
+
+# demo video renders
+demo-build/
+__pycache__/

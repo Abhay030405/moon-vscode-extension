@@ -9,10 +9,12 @@ import { ToolContext, type EditorBridge } from "../tools/context.js";
 import { buildReview, type FileReview } from "./review.js";
 import { ApprovalLedger } from "../safety/approval-ledger.js";
 import { ShadowCopy } from "./shadow-copy.js";
+import { listChanges } from "./change-tracker.js";
+import { VerificationTracker, type Verification } from "./verification.js";
 
 export interface AgentRunOptions {
   projectRoot: string;
-  config: Pick<MoonConfig, "tools" | "safety" | "agentRun" | "security">;
+  config: Pick<MoonConfig, "tools" | "safety" | "agentRun" | "security" | "verification">;
   editor?: EditorBridge;
   /** Called when the user approved apply_changes; returns the report for the agent. */
   applyApproved(run: AgentRun, summary: string): Promise<string>;
@@ -28,6 +30,10 @@ export class AgentRun {
   readonly approvals: ApprovalLedger;
   /** When the agent last changed a file in the copy (ms); the review shows if tests ran after it. */
   lastEditAt = 0;
+  /** The edit record and the check commands: Moon's own facts for the check result (section 12). */
+  readonly verification: VerificationTracker;
+  /** Impact-check findings the agent was already told (it is held back once per finding, section 13.1). */
+  readonly impactTold = new Set<string>();
   private readonly abort = new AbortController();
 
   /** Makes the hidden copy (async, so the editor never waits on it) and the run around it. */
@@ -51,16 +57,19 @@ export class AgentRun {
     this.tools = new ToolContext(this.copy.dir, options.config);
     this.tools.editor = options.editor;
     this.approvals = new ApprovalLedger(options.config.security.approvalTtlMs);
+    this.verification = new VerificationTracker(options.config.verification);
     this.tools.agentRun = {
       copy: this.copy,
       approvals: this.approvals,
-      onEdit: () => {
+      onEdit: (rel, before, after) => {
         this.lastEditAt = Date.now();
+        this.verification.recordEdit(rel, before, after);
       },
       signal: this.abort.signal,
       onCommand: (result) => {
         this.commands.push(result);
         options.onCommand?.(result);
+        return this.verification.recordCommand(result);
       },
       applyApproved: (summary) => options.applyApproved(this, summary),
     };
@@ -78,6 +87,14 @@ export class AgentRun {
   /** The agent's changes, as hunks against the real files now. */
   review(readProjectText: (rel: string) => string | null): FileReview[] {
     return buildReview(this.copy, readProjectText);
+  }
+
+  /** Moon's check result for the changes in the copy now (`rejectedHunks` after the review). */
+  checkResult(rejectedHunks = 0): Verification {
+    return this.verification.result(
+      listChanges(this.copy).map((c) => c.rel),
+      rejectedHunks,
+    );
   }
 
   /** Stop (kills a running command), then deletes the hidden copy in the background. */

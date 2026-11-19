@@ -1,0 +1,28 @@
+{
+  "$comment": "The 50-second intro for the 4-minute submission video: what Moon is, Fig 1 and Fig 3 only. Same page as intro.json; keep the phrases the scene code looks for. Render: node scripts/demo/intro/render-intro.mjs --spec intro-short.json --out demo-build/moon-intro-short.mp4",
+  "voice": "en-IN-PrabhatNeural",
+  "rate": "+50%",
+  "fallbackVoice": "Microsoft David Desktop",
+  "pause": 0.3,
+  "scenes": [
+    {
+      "id": "whatis",
+      "lead": 0.5,
+      "text": "Moon is a coding agent for Visual Studio Code. It edits code inline, works across a whole project, and changes nothing until you approve."
+    },
+    {
+      "id": "arch",
+      "text": "The Moon panel sits on a thin Visual Studio Code layer; the logic lives in Moon core. Core sends each turn to TrueForge, which runs the agent loop and streams events back. Only TrueForge calls a model: Claude first, DeepSeek as backup. The agent edits a hidden copy through seventeen MCP tools, and only accepted hunks reach your files."
+    },
+    {
+      "id": "context",
+      "text": "Flask is seventeen thousand lines, so Moon starts small: project rules up to two thousand tokens, and a project map, where files link by the names they use, ranked with PageRank into ten percent of the window. A scout picks the files, report context fills the context card, and the agent reads more until TrueForge compacts.",
+      "tail": 0.6
+    },
+    {
+      "id": "demo",
+      "text": "Now, the live demo.",
+      "tail": 0.6
+    }
+  ]
+}

@@ -48,7 +48,7 @@ export type MoonEvent =
   /** The agent called a tool. `step` is how the live log shows it ("Read" + "src/app.py:1-80"). */
   | { type: "tool-call"; id: string; tool: string; step: ToolStep; subagent: boolean; args: Record<string, unknown> }
   /** The agent reported the files it chose and why (report_context): the panel's context card. */
-  | { type: "context-choice"; files: { path: string; reason: string }[] }
+  | { type: "context-choice"; files: { path: string; reason: string }[]; similar?: string }
   /** A tool call finished. */
   | { type: "tool-result"; id: string }
   /** Something worth a line in the live log (subagent started, context compacted, ...). */
@@ -158,7 +158,8 @@ export class TurnEventMapper {
       }
       if (name === REPORT_CONTEXT_TOOL) {
         const files = contextFiles(args.files);
-        if (files.length > 0) events.push({ type: "context-choice", files });
+        const similar = typeof args.similar === "string" && args.similar.trim() ? args.similar.trim() : undefined;
+        if (files.length > 0) events.push({ type: "context-choice", files, ...(similar ? { similar } : {}) });
       }
       return events;
     });

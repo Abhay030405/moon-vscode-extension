@@ -5,12 +5,13 @@ Round 1 deadline: **20 November 2026, 23:59 IST**.
 
 How to read this file:
 - **Decided**: we agreed on it.
-- **Decided (confirmed)**: first proposed as a suggestion, then confirmed on 5 Nov 2026.
+- **Decided (confirmed)**: first proposed as a suggestion, then confirmed by the team.
+- **Suggested (to confirm)**: proposed by Claude, not yet confirmed by the team.
 - **Open**: still to decide or to settle by testing.
 
 The build plan, folder structure, evaluation and safety plan are in `moon-architecture-and-build-plan.md`.
 
-Last updated: 5 November 2026
+Last updated: 11 November 2026
 
 ---
 
@@ -144,6 +145,7 @@ Last updated: 5 November 2026
 - The panel shows 3–5 chosen files, **one line of reason each**, plus a small **budget bar** (for example "map 1.8k / 4k").
 - The reasons must come **from the agent** (the scout's report), not be written by the extension.
 - Must be readable in about 2 seconds in the video.
+- **Decided (11 Nov):** the card also shows the scout's **"similar code to copy"** line (section 13.3).
 
 ### 3.4 Languages
 
@@ -169,7 +171,10 @@ Last updated: 5 November 2026
 - Main feature: **subagents** (the scout). Also using built-in **compaction**.
 - **Deferred tool loading** and **dynamic subagents** are **on by default** in TrueForge (section 7). Mention and show them in the write-up.
 - **Code Mode: not used.** Code Mode lets the agent write a small script that calls many tools in one go and only returns the final result. In TrueForge it **needs the sandbox**, which does not run on Windows.
-- **TrueForge skills: not used for now**, for the same reason (TrueForge says skills need the sandbox). The later notes feature (section 5) gives its notes to the agent as plain text at the start of a session instead.
+- **TrueForge skills: not used for now**, for the same reason (TrueForge says skills need the sandbox). Memory is handled by session history and recall instead (section 5.1).
+
+**Decided (11 Nov 2026)**
+- **No tuning for one model.** The organisers retest with their own model, so Moon does not use a separate cheaper model for the scout or tune prompts for one provider. Quality must come from the design (tools, checks, instructions), not the model.
 
 ---
 
@@ -201,7 +206,9 @@ Last updated: 5 November 2026
 
 ---
 
-## 5. Moon notes (memory) feature: built AFTER the required features
+## 5. Moon notes (memory) feature: REPLACED by session history (section 5.1)
+
+> 10 Nov 2026: the `/update` notes feature below is **dropped**. Memory is now the session history and recall in section 5.1. Kept here only as a record of what was considered.
 
 **Decided**
 - Notes are **never written inside the project**. On first use, Moon asks the user to choose a notes folder outside the project.
@@ -244,6 +251,8 @@ These are separate from the `/update` notes above. This is the memory of *what w
   - **Resume:** `/resume` lists only this project's agent chats, with probe and inline sessions hidden. A chat can be opened read-only, continued or deleted.
   - **Summary:** written by the agent as its last step (`save_summary`). When the agent wrote none, it is built from the record.
 - **Recall.** `list_past_sessions` needs no approval. `read_past_session` needs approval through the recall card, except for a session the user picked themselves. Past sessions are untrusted text, to guard against memory poisoning.
+- **The project is identified by its folder path, not its git remote**, so a fresh Flask clone never inherits old history.
+- **Demo and evals start with no history** for the Flask folder (fresh clone in a new folder). Otherwise the agent may ask "use the earlier `flask config` session?" during Task B, which looks like the files were named and adds a prompt to the video.
 
 **As built (10 Nov)**
 - **One change from the plan: the work record is a small file.** TrueForge's stored events carry the tool calls, but not what Moon decided outside the model: command results as the review shows them, the user's applies, rejects and undos. So each conversation's record is saved as one JSON file in the extension's own storage folder (`work-records/<conversation id>.json`). It holds paths, line ranges, short command endings and decisions only: never file contents, never secrets. TrueForge stays the store of the conversation itself.
@@ -346,6 +355,15 @@ Task C: the organisers break the model (unreachable address or invalid key) and 
 **Decided (confirmed; after reading TrueForge's timeouts, section 7)**
 - **TrueForge already retries twice**, so on a 5xx or unreachable error Moon **switches to the backup right away** instead of retrying again.
 - **Moon's own timer (watchdog):** if no streamed event arrives within about **10–12 seconds** of sending, Moon cancels the turn and switches. This covers servers that never answer (TrueForge alone would wait up to minutes).
+- **Changed (13 Nov): long tasks switched models for no reason.** Seen on "make a game like GTA 6":
+  - After the plan was approved, Claude said nothing for 12 s. Later, DeepSeek was silent for 45 s while writing the next big file. Both models were working. Both times Moon switched anyway.
+  - TrueForge does forward a tool call's arguments as they stream. But the provider can send them in large chunks with long pauses, and a whole file is one `content` value. A long silent think looks the same.
+  - Fix:
+    - The 12 s first-reply time (`resilience.watchdogMs`) now applies only until the model has answered once in the chat. After that it is `resilience.firstReplyKnownMs` (60 s). A model switch resets it.
+    - `resilience.stallMs` is raised from 45 s to 180 s.
+    - The agent instructions say to write big files in parts of about 200 lines.
+  - Task C is unchanged: it starts with the endpoint already broken, so the 12 s still applies.
+  - Trade-off: a model that dies in the middle of a long task is caught after up to 3 minutes instead of 45 s.
 
 ---
 
@@ -393,6 +411,7 @@ Task C: the organisers break the model (unreachable address or invalid key) and 
 - **Deferred tool loading is the default** for MCP tools (only tool names first, full details when needed), with an option to preload chosen tools.
 - **Large tool responses** are moved out of the main context automatically (on by default; uses the sandbox, check if it works without one).
 - Agent definitions also support **skills**, a **loop step limit** (default 512), and "ask the user a question".
+- **"Ask the user a question": tested by the team on 11 Nov 2026, works as needed** (pauses the run, shows choices, accepts typed text, continues after the answer). Used for the "2 attempts failed, what next?" question (section 12.7).
 - **Skills and Code Mode need the TrueForge sandbox** (the SDK says so in its sandbox setting), and the sandbox does not run on Windows. So Moon uses neither.
 
 **Chat UI kit (`@truefoundry/trueforge-ui`)**
@@ -459,7 +478,8 @@ Task C: the organisers break the model (unreachable address or invalid key) and 
 - **Tool list:**
   - Looking around (never pause): `list_files` (skips junk folders, size limit), `search_text` (max ~50 results), `find_definition`, `find_usages`, `read_file` (line range only), `get_errors` (VS Code's error list for a file)
   - Changing the hidden copy (never pause): `edit_file`, `list_pending_changes`
-  - Pause for the user (TrueForge approval): `run_command`, `apply_changes`
+  - Pause for the user (TrueForge approval): `run_command`, `apply_changes` (since 10 Nov also `propose_plan` and `read_past_session`, sections 5.1–5.2; since 11 Nov also the undo of an earlier run, section 13.5)
+  - Never pause: `list_past_sessions`, `work_log`, `report_context` (sections 3.4b, 5.1)
   - Inline edit only: `propose_edit`
 - **Who gets which tools:**
   - Agent mode: all looking-around tools + edit tools + `run_command` + `apply_changes`
@@ -470,7 +490,7 @@ Task C: the organisers break the model (unreachable address or invalid key) and 
 - **Inline edit hands back its change through the `propose_edit` tool** (fixed shape, works the same with any model). Moon turns it into the in-editor diff with Accept/Reject.
 
 **Decided: where the project map is kept**
-- The map is **cached in Moon's own folder, outside the project** (the same notes folder), one cache per project. It is **never written into the project**.
+- The map is **cached in Moon's own storage folder, outside the project**, one cache per project. It is **never written into the project**.
 - Moon remembers **when each file last changed** and, at the start of a session, re-reads **only the changed files**. Updates are automatic and almost instant. The user never has to update anything.
 - Why: the map is built by tree-sitter (no AI call, no credits), so rebuilding is cheap. A map the user must update by hand goes stale and misleads the agent.
 - **If the project already has an `AGENTS.md` or `CLAUDE.md`, Moon reads it and gives it to the agent, but never writes to it** (the industry habit: those files are short rules written by people).
@@ -498,9 +518,13 @@ Task C: the organisers break the model (unreachable address or invalid key) and 
 10. (done) TrueForge running locally, model added; chat, streaming, cancel, wrong-key and unreachable tests done.
 11. (done) Architecture, folder structure and build plan: see `moon-architecture-and-build-plan.md`.
 12. **Azure model retirement:** `DeepSeek-V4.1-Flash` (preview) retires on **15 Dec 2026**, before Round 2. Before the finals, move the backup to a model that stays available (for example `DeepSeek-V4-Flash`, generally available until Feb 2028, or `DeepSeek-V4.1-Flash-1017`, preview until Mar 2027). Only `.env` and `config/moon.json` change; no code. Also confirm in the Azure portal which base model the `DeepSeek-V4.1-Flash-2` deployment uses.
-13. **Pin the TrueForge version before recording the demo.** `trueforge.version` is `latest` while building; set it to the exact version we tested (0.184.1 today) before recording and submitting, so a TrueForge release on the last day can't break the demo or the judges' setup.
+13. (done, 10 Nov) TrueForge pinned to the tested version (0.184.2, `trueforge.version`), so a TrueForge release on the last day can't break the demo or the judges' setup.
 14. Confirm while building the TrueForge client: sessions refer to a model as `provider/name` (for example `azure-deepseek/deepseek-v4-1-flash-2`).
 15. **Test projects in more languages:** add at least one small JS/TS repo to `config/test-repos.json` with a few retrieval scenarios, so "works on any language" is checked, not just claimed.
+16. (done, 10 Nov) Extras decided and built: session history and recall, plan mode, web search, GitHub (sections 5.1–5.2). Compiling on hold (`run_command` covers it; partly covered by section 12).
+17. (done, 11 Nov) Verification design fully decided (section 12).
+18. (11 Nov) Cost of one Task B run, measured: Claude Sonnet 5.5, 354,884 input + 6,727 output tokens (from TrueForge's usage events), 112 s. At list price ($2 / $10 per million) that is **about $0.78 at most** (cached input is cheaper, so the real cost may be lower). Almost all of it is input, so cost tuning should cut context per step. Cost tuning comes next.
+19. (done, 11 Nov) Finding, changing and undoing fully decided (section 13).
 
 ---
 
@@ -511,3 +535,153 @@ Task C: the organisers break the model (unreachable address or invalid key) and 
 - **TrueForge's network guard can block cloud endpoints too**, not only localhost: on some networks DNS also returns a NAT64 (`64:ff9b::`) address, which the guard treats as private. `scripts/start-trueforge` therefore allows localhost **plus the hosts of our own provider endpoints** (read from `.env`).
 - **Test projects are data, not code.** `config/test-repos.json` lists the repositories used to test Moon (Flask 3.1.3 for the fixed tasks first), each with its exact commit and its own setup commands; `scripts/setup-test-repo` prepares them in `test-repos/` (git-ignored). Moon's own config knows nothing about them.
 - TrueForge needs **Node.js 22.14+**.
+
+---
+
+## 12. Verification: proof, not claims (11 Nov 2026)
+
+**The problem:** today "the change is correct" is only the model's word. A model can say "fixed" when the fix doesn't work, or when it never ran the tests. Moon must show what is **proven**, not what is **claimed**.
+
+### 12.1 The core rule
+
+**Decided**
+- **Moon decides the check result, not the model.** Moon uses facts it recorded itself: which commands ran, their exit codes, which files changed.
+- Four results, shown in the review screen and in the agent's final message:
+  - **Verified:** related tests ran in the copy and passed.
+  - **Failed:** tests ran and still fail. The failures and the reason are shown.
+  - **Not verified:** tests could not run. Moon shows **the reason** (for example "Docker is not running", "Java is not installed", "you denied the command") and **the exact command** the user can run to check.
+  - **Partly verified:** some checks ran and some could not, or the user rejected some hunks.
+- The agent may only say "fixed" or "done and working" when the result is **Verified**.
+
+### 12.2 The fix flow: test before, fix, test after
+
+**Decided**
+- For a fix, the agent first runs the **related tests on the original code** (in the copy, before editing) to see the problem. Then it makes the fix. Then it runs the **same tests again**. Moon compares before and after, which proves the fix changed the result.
+
+**Decided: follow the industry standard (regression test)**
+- If the existing tests **already pass before the fix** (they don't catch the bug), the agent **writes a small new test that shows the bug**: it must fail on the original code and pass after the fix. This is the normal practice in software teams (a "regression test") and in good coding agents ("reproduce first, then fix").
+- Moon checks both halves itself: the new test is run on the original code (must fail) and on the changed code (must pass). Only then is the result **Verified**.
+- The new test is part of the change, so it shows in review as its own hunk and the user can reject it.
+- If the bug can't be captured in a test (for example screen layout, or an outside service), the agent says so and the result is **Not verified** with the reason.
+
+### 12.3 Only test what the user asked about
+
+**Decided**
+- Run only the tests related to the change, not the whole test suite.
+- Problems unrelated to the task are **not fixed** without asking. If the user asks to fix X and the test for X fails because of a separate problem Y, the agent does not touch Y. It says: "Tests still fail because of Y. Do you want me to fix that too?"
+
+### 12.4 Changes with nothing to test
+
+**Decided**
+- Docs-only or config-only changes: just make the change. Result: "Not verified: nothing to test".
+
+### 12.5 Finding the test command
+
+**Decided**
+- If the test command is not known (and not in AGENTS.md), the agent **guesses it from the project's files** (for example the package file, the Python project file, a Makefile) and **asks permission** before running it.
+- **Decided (confirmed):** no new mechanism needed. The normal `run_command` approval card is the permission, with one extra line such as "Moon guessed this command from pyproject.toml".
+- **Decided (confirmed):** the agent always runs tests in **"run once and exit"** mode, never in "watch" mode (some test commands, like `npm test` in some projects, keep running and waiting for file changes, so they would never finish).
+
+### 12.6 When tests can't run
+
+**Decided (confirmed)**
+- **"Could not run" is different from "ran and failed".** Moon reads the command result: "command not found", "Docker daemon not running", "connection refused" and similar mean an **environment problem**. These never count as fix attempts and never trigger code changes.
+- In that case the agent **still makes the change**, does **not** keep retrying, and says at the end, for example: **"I have not verified this because Docker was not running. Run `<command>` to check."** Result: **Not verified**.
+
+### 12.7 No endless loops
+
+**Decided**
+- When tests keep failing, the agent gets **2 fix attempts**. **Each attempt must use a different approach.**
+- After 2 failed attempts the agent **stops and asks the user**, in plain text that needs the user's answer:
+  - what it tried (attempt 1, attempt 2) and why each still fails
+  - **a few other ways** it could try
+  - the question: "Do you want me to try one of these?"
+- The question is shown as a **question card** in the Moon panel, with the suggested ways as choices plus a box to type your own answer. It uses TrueForge's built-in **"ask the user a question"** feature (tested, works; section 7), so the run pauses properly instead of ending.
+- **If the user picks a way (or types one):** the agent gets **2 more attempts** with that way, with the same rules (different approach each time, then ask again).
+- **If the user says stop:** the **review still opens**, with the result **Failed**, so the user can still keep any useful partial changes hunk by hunk, or discard everything.
+
+**Decided (confirmed)**
+- **Moon blocks repeats:** Moon keeps a record of the edits made in each attempt. If a new attempt makes the same edit as one that already failed, Moon refuses it and tells the agent "you already tried this". This is how "a different approach" is enforced by Moon, not just hoped for from the model.
+- **Weakened tests are flagged in review:** if the agent deleted a test or removed checks from a test, the review screen shows a warning on that hunk.
+
+**Decided: no time limit on test runs**
+- Moon does **not** stop a test after a fixed time. The user's **Stop** button is the way out of a test that never ends.
+- **Open:** this conflicts with the existing `agentRun.commandTimeoutMs` (5 minutes), which still stops every command. Not changed yet.
+
+### 12.8 As built, slice 1 (11 Nov)
+
+- **`VerificationTracker`** (`packages/core/src/workspace/verification.ts`, no VS Code) holds the edit record (file, text before and after, attempt) and every check command. The result for the review is computed from these alone.
+- **What counts as a check, a test file, "nothing to test", an environment error and a test assertion are all settings** (`verification.*` in `config/moon.json`), so nothing is specific to Python or Flask. "Command not found" exit codes (127, 9009) are constants.
+- **Attempts:** a check that fails **after a code (non-test) file changed** ends the attempt. A check that fails when only test files changed is recorded as the result **on the original code** (the "before"), so writing a regression test that fails first is not a failed attempt. A pass after such a failure adds the line "It failed on the original code and passes after the change."
+- `run_command`'s result carries Moon's note (environment problem: not an attempt; attempt N failed; ask the user after the last one). `apply_changes`' report ends with Moon's result and, unless it is Verified, tells the agent not to claim the change works.
+- A command the user **denies** is recorded, so the result says "you denied the check command".
+- **Partly verified:** a check passed but another could not run, or the user rejected hunks (shown to the agent after the apply).
+- **Weakened tests:** a test file that loses assertions or test definitions, or is deleted, gets a warning in the review.
+- `edit_file` returns the changed lines with `tools.editResultContextLines` lines around them, numbered like `read_file` (section 13.2).
+
+**Suggested (to confirm) / not built yet (slice 2):**
+- **Clean start and repeat-blocking (12.7, 13.4)** are not switched on yet. Risk found: in Task B, `test_load_dotenv` fails in the copy only because `.env` is left out (section 2.1). If Moon put back the original code after that failure, it would throw away a correct Task B change. Suggested rule: a failed check counts as a failed attempt only when a test fails that **did not fail on the original code**, or when no "before" run exists and the user confirms. To decide before building.
+- **Refusing edits after the last attempt until the user answers** the question card: not built (the agent is only told to ask).
+
+### 13.6 As built, slice 2 (11 Nov)
+
+- **Impact check (13.1)** (`packages/core/src/workspace/impact.ts`, no model call). For each changed file Moon reads the definitions before and after (tree-sitter, the project map's reader). A function or class that is gone from every changed file has been **renamed or removed**: every remaining use counts, imports included. A function whose **inputs** changed counts only for calls (`name(`) on lines the agent did not touch. Where the uses are: the map's tags of each file, plus every file the agent changed.
+  - Kept quiet on purpose: only names **defined once** in the project; no dunder names; new inputs that all have a default (`=`, `?`, `*`) are not a change, since old calls still work.
+  - **When:** the first `apply_changes` with new findings is **held back once** (no review opens) and the agent gets the list, so it can fix the places. If it calls `apply_changes` again, the review opens and any places still not updated are listed in its warnings. At most `verification.impactMaxUses` places.
+  - Skipped when no project map was built in this session.
+- **Similar code (13.3):** the scout's brief asks for a last line, `Similar: <what to copy and where>`. `report_context` takes it as `similar`, and the context card shows it as "Similar code to copy".
+- **Undo of an earlier run (13.5):**
+  - Every apply of the conversation keeps its backup (text before and after each file) and gets a **run number**, which is given in the `apply_changes` result.
+  - The new tool `undo_applied_run {run, reason}` needs approval. Its card lists each file that goes back, and marks the ones changed since that apply.
+  - A file changed since the apply, by hand or by a later run, gets its own question (a modal dialog in VS Code) when the undo runs. **No** leaves it as it is; the other files are still undone.
+  - The "Undo this whole run" button now asks the same way, instead of skipping such files without asking.
+  - **Limit:** the backups are kept in memory while the conversation is open in the panel. A chat continued later from the history cannot undo the runs it applied before.
+
+---
+
+## 13. Finding files, making changes, undoing changes (11 Nov 2026)
+
+**The goal:** handle the critical cases in one go, cheaply. Wherever Moon can check something with its own code (the project map, its edit records), it does that instead of asking the model, because that costs nothing and can't be wrong in the way a model can.
+
+### 13.1 Impact check: no half-finished changes
+
+**Decided**
+- When the agent changes a function or class (its name or its inputs), Moon uses the **project map** to find **every place that uses it**, and checks which of those places the agent did not update.
+- This runs **before review**, with **no model call**.
+- Missed places are **told to the agent** (so it can fix them) **and shown in the review screen**, for example: "2 uses of `get_debug_flag` not updated: `app.py` line 120, `cli.py` line 455".
+
+### 13.2 The edit record (the base for undo and repeat-blocking)
+
+**Decided**
+- Moon keeps a record of **every edit** in the run: which file, the text before, the text after, and which **attempt** it belongs to.
+- Undoing an edit is a **lookup in this record**, not a new search. This is the same record used to block repeated failed edits (section 12.7).
+
+**Decided (confirmed)**
+- Every `edit_file` result returns the **new lines around the change**, so the agent's view of the file stays current without reading the whole file again.
+
+### 13.3 New code follows the project's style
+
+**Decided**
+- The scout's report also gives **one piece of similar existing code to copy** (for example "new CLI commands look like the `routes` command in `cli.py`").
+- This line also appears on the **context card** in the panel (section 3.3).
+
+### 13.4 No dead code between attempts
+
+**Decided**
+- Code from a failed attempt must **never be left behind as dead code**.
+
+**Decided (confirmed): clean start**
+- Before the next attempt starts, Moon **puts back the original code** for everything the failed attempt changed, using the edit record (13.2). The next attempt starts from clean code.
+- Why: Moon guarantees it with no model cost. If the agent had to clean up by itself, it would depend on the model remembering, which is the "trust the model" problem section 12 fixes.
+- If the next attempt needs part of the failed one, the agent simply writes it again.
+- The review then shows **only the final attempt's changes**.
+
+### 13.5 Undoing changes the user already accepted
+
+**Decided**
+- If changes from an **earlier run** were accepted and applied, and later (in the same conversation) they turn out to be wrong, Moon can undo **all of that run's accepted changes in one go**, restoring from the backup saved just before that run's Apply.
+- **If the user edited one of those files by hand after Apply:** Moon **warns and asks** about that file before undoing it. **If the user says no, that file is left unchanged**; the other files are still undone.
+
+**Decided (confirmed)**
+- Undoing an earlier run changes real files, so it follows the "no silent writes" rule: the agent **proposes** the undo through a tool that **needs approval**, and the approval card lists the files that will go back. The user's "Undo this whole run" button stays as the one-click manual way.
+- Moon keeps each run's backup for **as long as the conversation exists**, so an earlier run can still be undone later.

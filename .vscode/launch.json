@@ -8,7 +8,7 @@
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}/packages/extension",
         "--disable-extensions",
-        "${workspaceFolder}/test-repos/flask"
+        "${workspaceFolder}/test-repos/flask-demo-20261119-2231"
       ],
       "outFiles": ["${workspaceFolder}/packages/extension/dist/**/*.js"],
       "preLaunchTask": "Build Moon"

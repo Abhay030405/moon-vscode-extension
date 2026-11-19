@@ -1,0 +1,21 @@
+{
+  "$comment": "The closing slides of the submission video, drawn by intro.html (scenes deploy and thanks). Render: node scripts/demo/intro/render-intro.mjs --spec outro.json --out demo-build/moon-outro.mp4",
+  "voice": "en-IN-PrabhatNeural",
+  "rate": "+50%",
+  "fallbackVoice": "Microsoft David Desktop",
+  "pause": 0.3,
+  "scenes": [
+    {
+      "id": "deploy",
+      "lead": 0.3,
+      "text": "To deploy: we ship a VSIX, each team runs TrueForge, developers install, and swapping models is config.",
+      "tail": 0
+    },
+    {
+      "id": "thanks",
+      "lead": 0.3,
+      "text": "Thank you.",
+      "tail": 1
+    }
+  ]
+}

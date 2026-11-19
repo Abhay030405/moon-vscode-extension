@@ -35,6 +35,10 @@ import {
   REJECTED_HUNK_PREVIEW_LINES,
   STATUS_MESSAGE_MS,
   reviewReport,
+  verificationText,
+  findMissedUses,
+  missedUsesText,
+  type MissedUse,
   type ResilientChat,
   type ApprovalAnswer,
   type ApprovalDecision,
@@ -60,6 +64,7 @@ const RUN_COMMAND_TOOL = "run_command";
 const APPLY_CHANGES_TOOL = "apply_changes";
 const READ_PAST_SESSION_TOOL = "read_past_session";
 const PROPOSE_PLAN_TOOL = "propose_plan";
+const UNDO_RUN_TOOL = "undo_applied_run";
 
 export interface AgentSessionDeps {
   service: MoonService;
@@ -89,12 +94,12 @@ const RESTRICTED_MODE_REASON =
 const MOON_TOOL_NAMES = new Set([...AGENT_TOOLS, ...EDITOR_TOOLS].map((t) => t.name));
 
 /** Secrets and hidden characters in the text a review would write (shown on the review screen). */
-function reviewWarnings(files: readonly FileReview[]): { rel: string; text: string }[] {
-  const warnings: { rel: string; text: string }[] = [];
+function reviewWarnings(files: readonly FileReview[]): { kind: "security"; rel: string; text: string }[] {
+  const warnings: { kind: "security"; rel: string; text: string }[] = [];
   for (const file of files) {
     const added = file.hunks.flatMap((h) => h.newLines).join("\n");
-    if (containsSecret(added)) warnings.push({ rel: file.rel, text: "adds what looks like a secret (a key, token or password)" });
-    if (hasHidden(added)) warnings.push({ rel: file.rel, text: "adds hidden characters (shown as ⟦U+...⟧ in the diff): they can make code look different from what it does" });
+    if (containsSecret(added)) warnings.push({ kind: "security", rel: file.rel, text: "adds what looks like a secret (a key, token or password)" });
+    if (hasHidden(added)) warnings.push({ kind: "security", rel: file.rel, text: "adds hidden characters (shown as ⟦U+...⟧ in the diff): they can make code look different from what it does" });
   }
   return warnings;
 }
@@ -114,8 +119,12 @@ export class AgentSession implements vscode.Disposable {
     | undefined;
   /** The approved review, used when TrueForge runs apply_changes. */
   private approved: { files: FileReview[]; accepted: HunkDecisions } | undefined;
-  /** Files the last apply changed, for "Undo this whole run". */
-  private lastApply: Map<string, AppliedFile> | undefined;
+  /**
+   * Every apply of this conversation, oldest first, with the text before and after each file
+   * (the backup). "Undo this whole run" undoes the last one; the agent can propose undoing an
+   * earlier one with undo_applied_run (section 13.5). Kept while the conversation is open.
+   */
+  private readonly appliedRuns: { n: number; files: Map<string, AppliedFile>; undone: boolean }[] = [];
   /** Files currently marked in the Explorer as waiting for review. */
   private marked: vscode.Uri[] = [];
   /** Told to the agent with the next message (e.g. the user undid the last apply). */
@@ -129,8 +138,6 @@ export class AgentSession implements vscode.Disposable {
   private tainted: string | undefined;
   /** Hard limits for the current task (tool calls, loops, commands, tokens, time). */
   private budget: RunBudget | undefined;
-  /** When the agent's last command finished, and how (for the review's "Verified" line). */
-  private lastCommand: { at: number; command: string; exitCode: number | null } | undefined;
 
   private constructor(
     readonly chatId: string,
@@ -259,40 +266,106 @@ export class AgentSession implements vscode.Disposable {
     }
   }
 
-  /** Puts every file the last apply changed back as it was (skips files changed since). */
+  /** "Undo this whole run": puts every file the last apply changed back as it was. */
   async undo(): Promise<void> {
-    const applied = this.lastApply;
-    if (!applied) return;
-    this.lastApply = undefined;
+    const last = this.appliedRuns.at(-1);
+    if (!last || last.undone) return;
+    const result = await this.undoApplied(last);
+    if (!result) return;
+    this.notes.push(
+      `(Note: the user undid applied run #${last.n}, your last apply_changes${result.kept.length ? `, except ${result.kept.join(", ")}, which they kept` : ""}.)`,
+    );
+  }
+
+  /** undo_applied_run, after the user approved its card: undoes that applied run. */
+  private async undoByAgent(n: number): Promise<string> {
+    const entry = this.appliedRuns.find((r) => r.n === n);
+    if (!entry) return `There is no applied run #${n} in this conversation.`;
+    if (entry.undone) return `Applied run #${n} was already undone.`;
+    const result = await this.undoApplied(entry);
+    if (!result) return "Nothing was undone: the editor refused the change. Tell the user.";
+    const parts = [`Undid applied run #${n}: ${result.restored.length ? `put back ${result.restored.join(", ")}` : "no file was put back"}.`];
+    if (result.kept.length) parts.push(`Left as they are (edited after the apply; the user chose to keep them): ${result.kept.join(", ")}.`);
+    return parts.join(" ");
+  }
+
+  /**
+   * Restores an applied run's backup. A file changed since that apply (by hand, or by a later
+   * run) is asked about first: if the user says no it is left as it is; the others are undone.
+   * Undefined when the editor refused the change.
+   */
+  private async undoApplied(entry: { n: number; files: Map<string, AppliedFile>; undone: boolean }): Promise<{ restored: string[]; kept: string[] } | undefined> {
     const edit = new vscode.WorkspaceEdit();
     const toSave: vscode.Uri[] = [];
-    const skipped: string[] = [];
-    let restored = 0;
-    for (const [rel, file] of applied) {
+    const restored: string[] = [];
+    const kept: string[] = [];
+    for (const [rel, file] of entry.files) {
       if (this.readProjectText(rel) !== file.after) {
-        skipped.push(rel);
-        continue;
+        const answer = await vscode.window.showWarningMessage(
+          `${rel} was changed after Moon applied it (by you or a later change). Undo it anyway? Those later changes would be lost.`,
+          { modal: true },
+          "Undo this file",
+        );
+        if (answer !== "Undo this file") {
+          kept.push(rel);
+          continue;
+        }
       }
       const uri = vscode.Uri.file(path.join(this.root, rel));
       if (file.before === null) edit.deleteFile(uri, { ignoreIfNotExists: true });
-      else if (file.after === null) edit.createFile(uri, { contents: Buffer.from(file.before, "utf8"), overwrite: true });
+      else if (this.readProjectText(rel) === null) edit.createFile(uri, { contents: Buffer.from(file.before, "utf8"), overwrite: true });
       else {
         await replaceDocument(edit, uri, file.before);
         toSave.push(uri);
       }
-      restored++;
+      restored.push(rel);
     }
-    if (!(await vscode.workspace.applyEdit(edit))) {
+    if (restored.length > 0 && !(await vscode.workspace.applyEdit(edit))) {
       void vscode.window.showErrorMessage("Moon could not undo the run: VS Code refused the change.");
-      return;
+      return undefined;
     }
     await saveAll(toSave);
-    this.memory.undo([...applied.keys()].filter((rel) => !skipped.includes(rel)));
-    this.notes.push("(Note: the user undid every change applied by your last apply_changes.)");
-    if (skipped.length) {
-      void vscode.window.showWarningMessage(`Moon did not undo ${skipped.join(", ")}: changed after the apply.`);
+    entry.undone = true;
+    this.memory.undo(restored);
+    this.deps.audit({ kind: "approval", detail: `undid applied run #${entry.n} (${restored.length} file(s), ${kept.length} kept)`, tool: UNDO_RUN_TOOL });
+    this.deps.post({ type: "undone", chatId: this.chatId, files: restored.length });
+    return { restored, kept };
+  }
+
+  /**
+   * undo_applied_run's approval card: which files go back, and which were changed since the
+   * apply (those are asked about one by one when the undo runs).
+   */
+  private async decideUndo(request: ApprovalRequest): Promise<ApprovalDecision | undefined> {
+    const n = Number(request.args.run);
+    const entry = this.appliedRuns.find((r) => r.n === n);
+    if (!entry || entry.undone) {
+      const open = this.appliedRuns.filter((r) => !r.undone).map((r) => `#${r.n}`);
+      return {
+        allow: false,
+        reason: `${entry ? `Applied run #${n} was already undone.` : `There is no applied run #${n}.`} Runs that can be undone: ${open.join(", ") || "none"}.`,
+      };
     }
-    this.deps.post({ type: "undone", chatId: this.chatId, files: restored });
+    const lines = [...entry.files].map(([rel, file]) => {
+      const what = file.before === null ? "deleted (Moon created it)" : file.after === null ? "restored (Moon deleted it)" : "put back as it was";
+      const changed = this.readProjectText(rel) !== file.after ? "; changed since the apply: you will be asked" : "";
+      return `- ${rel}: ${what}${changed}`;
+    });
+    const reason = typeof request.args.reason === "string" ? request.args.reason : "";
+    const text = [`Undo applied run #${n}. These files go back to how they were before that apply:`, ...lines, "", `Why: ${reason}`].join("\n");
+    this.deps.audit({ kind: "approval", detail: "asked", tool: UNDO_RUN_TOOL });
+    const allow = await new Promise<boolean | undefined>((resolve) => {
+      this.waiting = { kind: "tool", requestId: request.toolCallId, resolve };
+      this.deps.post({
+        type: "tool-approval",
+        chatId: this.chatId,
+        approval: { requestId: request.toolCallId, tool: request.tool, args: revealHidden(text).text, truncated: false, tainted: this.tainted },
+      });
+    });
+    this.deps.post({ type: "tool-approval", chatId: this.chatId, approval: undefined });
+    if (allow === undefined) return undefined;
+    this.memory.decision(`the user ${allow ? "allowed" : "declined"} undoing applied run #${n}`);
+    return allow ? { allow: true } : { allow: false, reason: `The user declined undoing applied run #${n}: leave those changes as they are.` };
   }
 
   /** New chat or panel closed: stop quietly (no "Stopped" message). */
@@ -352,6 +425,7 @@ export class AgentSession implements vscode.Disposable {
     if (request.tool === APPLY_CHANGES_TOOL) return this.decideReview();
     if (request.tool === READ_PAST_SESSION_TOOL) return this.decideRecall(request);
     if (request.tool === PROPOSE_PLAN_TOOL) return this.decidePlan(request);
+    if (request.tool === UNDO_RUN_TOOL) return this.decideUndo(request);
     // Any other tool that pauses (for example a GitHub write): the user sees exactly what it
     // will do and decides. Nothing is ever allowed silently.
     return this.decideTool(request);
@@ -482,6 +556,7 @@ export class AgentSession implements vscode.Disposable {
     this.deps.audit({ kind: "approval", detail: decision === "deny" ? "denied" : decision === "always" ? "allowed always" : "allowed once", tool: RUN_COMMAND_TOOL });
     if (decision === "deny") {
       this.memory.decision(`the user denied the command: ${command}`);
+      this.run?.verification.recordDenied(command);
       return { allow: false, reason: "The user denied this command." };
     }
     // "Always" never applies in a tainted task (the card hides it too).
@@ -503,12 +578,28 @@ export class AgentSession implements vscode.Disposable {
     if (files.length === 0) {
       return { allow: false, reason: "There is nothing to apply: your working copy matches the user's files." };
     }
+    // Impact check (section 13.1): uses of a renamed function, or one whose inputs changed, that
+    // the agent did not update. New findings go back to the agent once, before the review opens;
+    // whatever is left is shown on the review screen.
+    const missed = await this.missedUses(run, files);
+    const fresh = missed.filter((m) => !run.impactTold.has(`${m.name}@${m.rel}:${m.line}`));
+    if (fresh.length > 0) {
+      for (const m of missed) run.impactTold.add(`${m.name}@${m.rel}:${m.line}`);
+      this.deps.audit({ kind: "blocked", detail: `impact check: ${fresh.length} use(s) not updated`, tool: APPLY_CHANGES_TOOL });
+      return {
+        allow: false,
+        reason:
+          `Moon's impact check (before the review):\n${missedUsesText(missed)}\n\n` +
+          "Update these places, then call apply_changes again. If a place is fine as it is, call apply_changes again and " +
+          "say why in your summary: the user will see the list on the review screen.",
+      };
+    }
     const summary = String(this.chat.waitingFor.find((r) => r.tool === APPLY_CHANGES_TOOL)?.args.summary ?? "");
     this.mark(files.map((f) => f.rel));
     this.deps.inEditor.show(new Map(files.map((f) => [f.rel, editorHunks(f)])));
     const choice = await new Promise<ReviewChoice>((resolve) => {
       this.waiting = { kind: "review", resolve };
-      this.deps.post({ type: "review", chatId: this.chatId, review: this.reviewView(summary, files, run) });
+      this.deps.post({ type: "review", chatId: this.chatId, review: this.reviewView(summary, files, run, missed) });
     });
     this.deps.post({ type: "review", chatId: this.chatId, review: undefined });
     this.mark([]);
@@ -528,7 +619,30 @@ export class AgentSession implements vscode.Disposable {
     return { allow: true };
   }
 
-  private reviewView(summary: string, files: FileReview[], run: AgentRun): ReviewView {
+  /** The impact check's findings for these changes (none when no project map was built). */
+  private async missedUses(run: AgentRun, files: readonly FileReview[]): Promise<MissedUse[]> {
+    try {
+      const tags = await this.assembler.impactTags(this.root);
+      if (!tags) return [];
+      return findMissedUses({
+        changes: files.filter((f) => !f.binary),
+        ...tags,
+        readText: (rel) => {
+          try {
+            return readFileSync(path.join(run.copy.dir, rel), "utf8");
+          } catch {
+            return null;
+          }
+        },
+        maxUses: this.config.verification.impactMaxUses,
+      });
+    } catch (err) {
+      this.deps.output.appendLine(`[impact] check skipped: ${(err as Error).message}`);
+      return [];
+    }
+  }
+
+  private reviewView(summary: string, files: FileReview[], run: AgentRun, missed: readonly MissedUse[]): ReviewView {
     const { reviewContextLines, reviewOutputChars } = this.config.agentRun;
     return {
       summary,
@@ -551,17 +665,21 @@ export class AgentSession implements vscode.Disposable {
         cancelled: c.cancelled,
         outputTail: c.output.slice(-reviewOutputChars),
       })),
-      warnings: reviewWarnings(files),
-      verified: this.verified(run),
+      warnings: [
+        ...reviewWarnings(files),
+        ...run.verification.weakenedTests(files).map((w) => ({ kind: "tests" as const, ...w })),
+        ...missed.map((m) => ({
+          kind: "impact" as const,
+          rel: m.rel,
+          text:
+            m.why === "removed"
+              ? `line ${m.line} still uses \`${m.name}\`, which was renamed or removed`
+              : `line ${m.line} calls \`${m.name}\` with its old inputs`,
+        })),
+      ],
+      // Moon's own result from its records of edits and checks (design-decisions section 12).
+      verified: run.checkResult(),
     };
-  }
-
-  /** Whether the agent's last command ran after its last edit, and how it ended (claim, check, act). */
-  private verified(run: AgentRun): ReviewView["verified"] {
-    const last = this.lastCommand;
-    if (!last) return { state: "none" };
-    if (last.at < run.lastEditAt) return { state: "stale", command: last.command, exitCode: last.exitCode };
-    return { state: last.exitCode === 0 ? "passed" : "failed", command: last.command, exitCode: last.exitCode };
   }
 
   // ---- applying (runs inside TrueForge's call of apply_changes, after the user approved) ----
@@ -594,7 +712,14 @@ export class AgentSession implements vscode.Disposable {
       return "Nothing was applied: the editor refused the change. Tell the user.";
     }
     await saveAll(toSave);
-    this.lastApply = applied.size > 0 ? applied : undefined;
+    let backupNote = "";
+    if (applied.size > 0) {
+      const n = this.appliedRuns.length + 1;
+      this.appliedRuns.push({ n, files: applied, undone: false });
+      backupNote =
+        `\n\nMoon saved a backup of this apply as applied run #${n}. If these changes turn out to be wrong later in this ` +
+        `conversation, propose ${UNDO_RUN_TOOL} with run ${n}.`;
+    }
     this.memory.apply(
       files.map((f) => {
         const accepted = applied.has(f.rel) ? (approved.accepted.get(f.rel)?.size ?? 0) : 0;
@@ -602,7 +727,9 @@ export class AgentSession implements vscode.Disposable {
       }),
     );
     this.deps.post({ type: "applied", chatId: this.chatId, files: applied.size, hunks, undoable: applied.size > 0 });
-    return reviewReport(files, approved.accepted, REJECTED_HUNK_PREVIEW_LINES);
+    const rejected = files.reduce((n, f) => n + f.hunks.length, 0) - hunks;
+    const check = this.run ? `\n\n${verificationText(this.run.checkResult(rejected))}` : "";
+    return reviewReport(files, approved.accepted, REJECTED_HUNK_PREVIEW_LINES) + check + backupNote;
   }
 
   // ---- context ----
@@ -673,7 +800,6 @@ export class AgentSession implements vscode.Disposable {
         editor,
         applyApproved: () => this.applyApproved(),
         onCommand: (result) => {
-          this.lastCommand = { at: Date.now(), command: result.command, exitCode: result.exitCode };
           this.memory.command(result);
         },
       });
@@ -687,8 +813,8 @@ export class AgentSession implements vscode.Disposable {
     }
     this.run = run;
     run.tools.memory = this.memory.hooks();
+    run.tools.undoRuns = { undo: (n) => this.undoByAgent(n) };
     run.tools.audit = (entry) => this.deps.audit(entry);
-    this.lastCommand = undefined;
     this.deps.service.setActiveRun(run);
     this.deps.output.appendLine(`[agent] working copy: ${run.copy.dir}`);
     return true;

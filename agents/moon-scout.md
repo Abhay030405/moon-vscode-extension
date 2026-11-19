@@ -10,7 +10,12 @@ would otherwise miss. Give it the user's task and this brief:
 > small line ranges. Do not edit anything and do not run commands. Look for: the code to
 > change, code that does something similar (to copy its style), its tests, and its docs.
 > Reply with at most 6 files, most important first, one line each:
-> `path - why it matters`. Nothing else.
+> `path - why it matters`. Then one last line, when similar code exists:
+> `Similar: <what to copy and where>` (for example "new CLI commands look like the `routes`
+> command in `src/app/cli.py`"). Nothing else.
+
+Pass the scout's `Similar:` line to `report_context` as `similar`, and write the new code the
+same way.
 
 Skip the scout only when the user asks a question and wants no change, or names the exact file
 and the exact change: then look yourself.

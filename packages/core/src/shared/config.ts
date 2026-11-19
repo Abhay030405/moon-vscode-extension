@@ -81,11 +81,30 @@ export const MoonConfigSchema = z
       /** Characters of each command's output (its end) shown with the test results in the review. */
       reviewOutputChars: positiveInt,
     }),
+    /** How Moon decides whether a change was checked (docs/design-decisions.md section 12). */
+    verification: z.strictObject({
+      /** Fix attempts (each must be different) before the agent has to ask the user what next. */
+      maxAttempts: positiveInt,
+      /** A command matching one of these (regex, case-insensitive) is a check: tests or a build. */
+      checkCommandPatterns: z.array(z.string().min(1)),
+      /** A failed check whose output has a line matching one of these could not run (not a failed attempt). */
+      environmentErrorPatterns: z.array(z.string().min(1)),
+      /** Test files (globs): changing only these is not a code change, and the review flags weakened tests in them. */
+      testFileGlobs: z.array(z.string().min(1)),
+      /** Changing only files matching these (docs, settings) means "nothing to test". */
+      nothingToTestGlobs: z.array(z.string().min(1)),
+      /** Lines in a test file that are test checks (assertions, test definitions), as regexes. */
+      testCheckPatterns: z.array(z.string().min(1)),
+      /** Impact check: list at most this many uses the agent did not update (renamed/removed names, changed inputs). */
+      impactMaxUses: positiveInt,
+    }),
     resilience: z.strictObject({
       /** No model output within this time after sending: cancel and switch to backup. */
       watchdogMs: positiveInt,
       /** Later in a turn (after a tool ran), no model output for this long: same. Longer, since big contexts reply slower. */
       stallMs: positiveInt,
+      /** No first output within this time once the model already answered in this chat (a long think or a big file, not a dead server). */
+      firstReplyKnownMs: positiveInt,
       /** How many times to wait and retry on "too many requests" before switching. */
       rateLimitRetries: z.number().int().min(0),
       /** Wait before the first retry after "too many requests" (doubles each time). */
@@ -130,6 +149,10 @@ export const MoonConfigSchema = z
       maxFileBytes: positiveInt,
       /** Hard cap on the text of any single tool result. */
       maxOutputChars: positiveInt,
+      /** edit_file returns the changed lines with this many unchanged lines around them. */
+      editResultContextLines: z.number().int().min(0),
+      /** ...and at most this many lines in total (a bigger change is summarised). */
+      editResultMaxLines: positiveInt,
       /** Folder names never listed or searched (anywhere in the tree). */
       ignoredDirs: z.array(z.string().min(1)),
     }),

@@ -45,9 +45,11 @@ export function ReviewScreen({ review, onApply, onDiscard, onOpenDiff }: Props) 
         <VerifiedLine verified={review.verified} />
         {review.warnings.map((w) => (
           <div key={`${w.rel} ${w.text}`} className="moon-review-security" role="alert">
-            Security: {w.rel} {w.text}.
+            {WARNING_LABELS[w.kind]}: {w.rel} {w.text}.
           </div>
         ))}
+      </div>
+      <div className="moon-review-head moon-review-head-bar">
         <div className="moon-review-bar">
           <span className="moon-review-count">
             {chosen} of {plural(total, "change")} accepted · {plural(review.files.length, "file")}
@@ -157,9 +159,32 @@ function allHunks(review: ReviewView, accept: boolean): Record<string, number[]>
  * this line comes from the commands Moon saw it run (OWASP LLM07, claim-check-act).
  */
 function VerifiedLine({ verified }: { verified: ReviewView["verified"] }) {
-  const command = verified.command ? <code>{verified.command}</code> : null;
-  if (verified.state === "passed") return <div className="moon-review-verified ok">Verified: {command} passed after the last change.</div>;
-  if (verified.state === "failed") return <div className="moon-review-verified failed">Not verified: {command} failed (exit {String(verified.exitCode)}) after the last change.</div>;
-  if (verified.state === "stale") return <div className="moon-review-verified failed">Not verified: files changed after the last check ({command}).</div>;
-  return <div className="moon-review-verified failed">Not verified: the agent ran no tests or checks.</div>;
+  const label = VERIFIED_LABELS[verified.state];
+  return (
+    <div className={`moon-review-verified ${verified.state}`}>
+      <strong>{label}:</strong> {verified.reason}
+      {verified.command && (
+        <div>
+          {verified.state === "verified" || verified.state === "failed" ? "Command: " : "To check, run: "}
+          <code>{verified.command}</code>
+        </div>
+      )}
+      {verified.evidence.map((line) => (
+        <div key={line}>{line}</div>
+      ))}
+    </div>
+  );
 }
+
+const WARNING_LABELS: Record<ReviewView["warnings"][number]["kind"], string> = {
+  security: "Security",
+  tests: "Tests",
+  impact: "Not updated",
+};
+
+const VERIFIED_LABELS: Record<ReviewView["verified"]["state"], string> = {
+  verified: "Verified",
+  failed: "Failed",
+  "not-verified": "Not verified",
+  "partly-verified": "Partly verified",
+};
