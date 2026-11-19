@@ -13,7 +13,7 @@
   * { box-sizing: border-box; }
   body { margin: 0; color: var(--ink); background: #fff;
          font-family: Charter, "Bitstream Charter", Cambria, Georgia, serif;
-         font-size: 9.25pt; line-height: 1.31; text-align: justify; hyphens: auto; }
+         font-size: 9.25pt; line-height: 1.27; text-align: justify; hyphens: auto; }
   a { color: var(--link); text-decoration: none; }
   code { font-family: Consolas, Menlo, monospace; font-size: 8.3pt; }
   h1 { font-family: Cambria, Georgia, serif; font-size: 16.5pt; margin: 0 0 3pt; text-align: center; }
@@ -358,36 +358,96 @@
   <tr><td>Main</td><td>Claude Sonnet 5.5 (<code>anthropic/claude-sonnet-5-5</code>)</td><td>Anthropic API, TrueForge catalog provider</td></tr>
   <tr><td>Backup</td><td>DeepSeek V4.1 Flash (<code>azure-deepseek/deepseek-v4-1-flash-2</code>)</td><td>Azure AI Foundry, TrueForge OpenAI-compatible provider (1,048,576-token window, 65,536 max output)</td></tr>
 </table>
-<p><b>Cost per task</b> (TrueForge usage events, list price per million input / output tokens: Claude $2 / $10, DeepSeek $0.30 / $1.20). <b>Task A:</b> Claude 24,121 in + 524 out, about <b>$0.05</b>; DeepSeek 17,104 in + 400 out, about <b>$0.006</b>. <b>Task B:</b> Claude 377,821 in + 7,838 out, about <b>$0.83</b>; DeepSeek 653,342 in + 7,431 out, about <b>$0.21</b>. <b>Task C:</b> Claude fails on the invalid key with no tokens used; DeepSeek finishes for 17,104 in + 400 out, about <b>$0.006</b>. Keys go in <code>.env</code> and <code>scripts/setup-providers</code> registers them in TrueForge; the extension never reads or sends a key. To switch models, change <code>models.main</code> and <code>models.backup</code> in <code>config/moon.json</code> to any model configured in TrueForge. No code changes. The prompts are model-neutral; retrieval, cancel and safety evals pass on both models.</p>
-<p><b>Fallback.</b> TrueForge errors carry the provider's status code in the text, for example <code>[Model Error] Request failed (401)</code>. Moon switches at once on 401, 403, 404, 5xx and "Cannot connect", retries a 429 twice, and switches when nothing streams back for 12 s. The same request then starts from the beginning on a new session with the backup model; Moon never stitches two half answers together. A circuit breaker probes the main model through TrueForge (after 30 s, doubling up to 10 min, and at once when its provider settings change) and moves back only between tasks. Measured: bad key switched in 0.46 s, dead address in 0.08 s, hanging server in 12 s, and <code>git status</code> was clean in all five scenarios.</p>
+<p><b>Cost per task</b> (TrueForge usage events, list price per million input / output tokens: Claude $2 / $10, DeepSeek $0.30 / $1.20). <b>Task A:</b> Claude 24,121 in + 524 out, about <b>$0.05</b>; DeepSeek 17,104 in + 400 out, about <b>$0.006</b>. <b>Task B:</b> Claude 377,821 in + 7,838 out, about <b>$0.83</b>; DeepSeek 653,342 in + 7,431 out, about <b>$0.21</b>. <b>Task C:</b> Claude fails on the invalid key with no tokens used; DeepSeek finishes for 17,104 in + 400 out, about <b>$0.006</b>. Keys go into TrueForge through <code>scripts/setup-providers</code>; the extension never reads or sends one. Switching models means changing <code>models.main</code> / <code>models.backup</code> in <code>config/moon.json</code>, no code. Retrieval, cancel and safety evals pass on both models.</p>
+<p><b>Fallback.</b> TrueForge errors carry the provider's status code, for example <code>[Model Error] Request failed (401)</code>. Moon switches at once on 401, 403, 404, 5xx and "Cannot connect", retries a 429 twice, and switches when nothing streams for 12 s; the same request restarts on a new session with the backup model, never stitching two half answers. A circuit breaker probes the main model through TrueForge (after 30 s, doubling up to 10 min) and moves back only between tasks. Measured: bad key 0.46 s, dead address 0.08 s, hanging server 12 s; <code>git status</code> clean in all five scenarios.</p>
 
 <h2>6&nbsp; Scorecard</h2>
 <table class="tight">
   <tr><th style="width:21%">Criterion</th><th style="width:9%">Video</th><th>Claim</th></tr>
   <tr><td>A1 Inline edit</td><td>1:06</td><td>Diff in the editor, each hunk accepted on its own; <code>FLASK_DEBUG=off</code> prints <code>False</code>.</td></tr>
-  <tr><td>A2 Agent mode</td><td>1:38</td><td>Task B edits code, test and docs files that the agent found itself; Moon's pytest check on the CLI tests comes back <b>Verified</b> (11 passed), <code>flask --help</code> lists <code>config</code>.</td></tr>
+  <tr><td>A2 Agent mode</td><td>1:38</td><td>Code, test and docs files the agent found itself; pytest check <b>Verified</b> (11 passed); <code>flask --help</code> lists <code>config</code>.</td></tr>
   <tr><td>A3 Streaming + cancel</td><td>0:52</td><td>Stop while it streams removes the preview at once; <code>git status</code> stays clean.</td></tr>
   <tr><td>B1 Context assembly</td><td>2:01</td><td>Context card shows the scout's files, a reason for each and the map budget bar.</td></tr>
   <tr><td>B2 Diff safety</td><td>2:10, 2:58</td><td>Per-hunk review before any write; "Undo this whole run" restores the files on screen.</td></tr>
   <tr><td>B3 Resilience</td><td>3:10</td><td>Broken Claude key: DeepSeek takes over with no click; <code>git status</code> clean.</td></tr>
-  <tr><td>B4 TrueForge depth</td><td>2:45</td><td>TrueForge session view shows the scout subagent and all 17 MCP tool calls, ending in <code>apply_changes</code>, the approval tool that opens the review.</td></tr>
+  <tr><td>B4 TrueForge depth</td><td>2:45</td><td>TrueForge session: scout subagent and 17 MCP tool calls, ending in the <code>apply_changes</code> approval.</td></tr>
   <tr><td>C1 Video</td><td>all</td><td>Tasks A, B and C in order, each followed by its check on screen.</td></tr>
   <tr><td>C2 Write-up</td><td>n/a</td><td>This document: architecture, context budget, models and cost, trade-offs, limitations.</td></tr>
 </table>
 
 <h2>7&nbsp; Tools used</h2>
-<p>Claude Code (Anthropic) was our main AI coding assistant for code, tests and documentation. Moon is built with TypeScript, React 19, Vite 8, esbuild, Vitest, pnpm and the VS Code Extension API, on the TrueForge SDK 0.184. Libraries: web-tree-sitter and tree-sitter-wasms (MIT), react-markdown and remark-gfm (MIT), Inter and JetBrains Mono fonts (OFL). Flask 3.1.3 with pytest is the test bed. This abstract was written in HTML, printed to PDF with headless Chrome, and edited against the humanizer writing checklist (MIT).</p>
+<p>Claude Code (Anthropic) was our main AI coding assistant for code, tests and documentation. Stack: TypeScript, React 19, Vite 8, esbuild, Vitest, pnpm, the VS Code Extension API and the TrueForge SDK 0.184; libraries web-tree-sitter, tree-sitter-wasms, react-markdown, remark-gfm (MIT) and the Inter and JetBrains Mono fonts (OFL). Flask 3.1.3 with pytest is the test bed. This abstract was written in HTML, printed with headless Chrome and edited against the humanizer checklist (MIT).</p>
 
-<h2>8&nbsp; Known limitations and the next month</h2>
+<h2>8&nbsp; Security</h2>
+<p>Following the OWASP Top 10 for LLM Applications (2026), Moon assumes the model will be fooled, and no control asks a model to judge safety. The agent has untrusted input, the project's secrets and a shell (the "lethal trifecta"), so every change and command needs a human approval, and a task that has read outside text (web, past sessions, third-party MCP) loses network commands.</p>
+<figure>
+<svg viewBox="0 0 680 106" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker>
+  </defs>
+  <rect x="6" y="6" width="103" height="40" rx="4" fill="#f2f2f2" stroke="#888"/>
+  <text x="57.5" y="19" class="t" text-anchor="middle">Tool call</text>
+  <text x="57.5" y="30" class="s" text-anchor="middle">chosen by the model,</text>
+  <text x="57.5" y="40" class="s" text-anchor="middle">treated as untrusted</text>
+  <line x1="109" y1="26" x2="119" y2="26" stroke="#555" marker-end="url(#d)"/>
+  <rect x="119" y="6" width="103" height="40" rx="4" fill="#eaf1fb" stroke="#4a7fc1"/>
+  <text x="170.5" y="19" class="t" text-anchor="middle">L1  Who may call</text>
+  <text x="170.5" y="30" class="s" text-anchor="middle">per-start token: none = 401,</text>
+  <text x="170.5" y="40" class="s" text-anchor="middle">any browser = 403</text>
+  <line x1="222" y1="26" x2="232" y2="26" stroke="#555" marker-end="url(#d)"/>
+  <rect x="232" y="6" width="103" height="40" rx="4" fill="#eaf1fb" stroke="#4a7fc1"/>
+  <text x="283.5" y="19" class="t" text-anchor="middle">L2  Command policy</text>
+  <text x="283.5" y="30" class="s" text-anchor="middle">block list on every part;</text>
+  <text x="283.5" y="40" class="s" text-anchor="middle">taint blocks network</text>
+  <line x1="335" y1="26" x2="345" y2="26" stroke="#555" marker-end="url(#d)"/>
+  <rect x="345" y="6" width="103" height="40" rx="4" fill="#fff4e2" stroke="#c98a2b"/>
+  <text x="396.5" y="19" class="t" text-anchor="middle">L3  Approval card</text>
+  <text x="396.5" y="30" class="s" text-anchor="middle">TrueForge approval shows</text>
+  <text x="396.5" y="40" class="s" text-anchor="middle">exact action, hidden chars</text>
+  <line x1="448" y1="26" x2="458" y2="26" stroke="#555" marker-end="url(#d)"/>
+  <rect x="458" y="6" width="103" height="40" rx="4" fill="#eaf1fb" stroke="#4a7fc1"/>
+  <text x="509.5" y="19" class="t" text-anchor="middle">Approval ledger</text>
+  <text x="509.5" y="30" class="s" text-anchor="middle">runs only the command</text>
+  <text x="509.5" y="40" class="s" text-anchor="middle">the user allowed, once</text>
+  <line x1="561" y1="26" x2="571" y2="26" stroke="#555" marker-end="url(#d)"/>
+  <rect x="571" y="6" width="103" height="40" rx="4" fill="#eaf1fb" stroke="#4a7fc1"/>
+  <text x="622.5" y="19" class="t" text-anchor="middle">L4  Sandbox-lite</text>
+  <text x="622.5" y="30" class="s" text-anchor="middle">hidden copy, env allowlist,</text>
+  <text x="622.5" y="40" class="s" text-anchor="middle">network off, timeouts</text>
+  <line x1="622.5" y1="46" x2="622.5" y2="60" stroke="#555" marker-end="url(#d)"/>
+  <rect x="517" y="60" width="157" height="40" rx="4" fill="#eaf1fb" stroke="#4a7fc1"/>
+  <text x="595.5" y="73" class="t" text-anchor="middle">L5  Output filter</text>
+  <text x="595.5" y="84" class="s" text-anchor="middle">secrets become «secret redacted»,</text>
+  <text x="595.5" y="94" class="s" text-anchor="middle">hidden chars shown, untrusted wrapper</text>
+  <line x1="517" y1="80" x2="503" y2="80" stroke="#555" marker-end="url(#d)"/>
+  <rect x="346" y="60" width="157" height="40" rx="4" fill="#eaf1fb" stroke="#4a7fc1"/>
+  <text x="424.5" y="73" class="t" text-anchor="middle">L6  Before the disk</text>
+  <text x="424.5" y="84" class="s" text-anchor="middle">per-hunk review, Verified line,</text>
+  <text x="424.5" y="94" class="s" text-anchor="middle">memory-write check, link confirm</text>
+  <line x1="346" y1="80" x2="332" y2="80" stroke="#555" marker-end="url(#d)"/>
+  <rect x="175" y="60" width="157" height="40" rx="4" fill="#eaf1fb" stroke="#4a7fc1"/>
+  <text x="253.5" y="73" class="t" text-anchor="middle">L7  Log and budget</text>
+  <text x="253.5" y="84" class="s" text-anchor="middle">hash-chained security log; caps on</text>
+  <text x="253.5" y="94" class="s" text-anchor="middle">calls, loops, commands, tokens, time</text>
+  <line x1="175" y1="80" x2="161" y2="80" stroke="#555" marker-end="url(#d)"/>
+  <rect x="4" y="60" width="157" height="40" rx="4" fill="#e8f5e9" stroke="#3c9a4a"/>
+  <text x="82.5" y="73" class="t" text-anchor="middle">Your files</text>
+  <text x="82.5" y="84" class="s" text-anchor="middle">only accepted hunks land;</text>
+  <text x="82.5" y="94" class="s" text-anchor="middle">Undo this whole run puts them back</text>
+</svg>
+<figcaption><b>Fig. 4.</b> Security layers in the order a tool call meets them. Amber is a TrueForge feature; the rest is TypeScript in <code>core/src/safety/</code>.</figcaption>
+</figure>
+<p><b>Tested:</b> 14 attack scenarios (prompt injection, secret exfiltration, hidden Unicode, poisoned memory) pass on both models; a direct tool-server call that skips TrueForge is refused.</p>
+
+<h2>9&nbsp; Known limitations and the next month</h2>
 <ul>
-  <li>Every eval ran on Windows 11. The macOS and Linux paths (process kill, temp folders) are written but not yet tested, and the clean-clone README test is still open.</li>
-  <li>Retrieval misses happen. On "make the log format configurable" the agent picked <code>docs/config.rst</code> instead of <code>docs/logging.rst</code> in 3 of 3 runs; we left the answer key unchanged.</li>
-  <li>Moon tells the agent to try a different approach after a failed attempt, but does not yet enforce it. Rolling back a failed attempt and blocking a repeated edit are designed but switched off, because <code>test_load_dotenv</code> fails in the copy (secret files are left out) and a rollback would discard a correct Task B change.</li>
-  <li>Undo backups for earlier runs live in memory, so a chat resumed from history cannot undo runs it applied before. If VS Code closes with a review open, the copy is deleted.</li>
-  <li>Command network blocking is a proxy setting, not an OS sandbox, and the secret scanner uses patterns and entropy only, since an ML classifier would need a model call.</li>
+  <li>Every eval ran on Windows 11; the macOS and Linux paths (process kill, temp folders) are written but untested.</li>
+  <li>Retrieval misses happen: for "make the log format configurable" the agent picked <code>docs/config.rst</code> over <code>docs/logging.rst</code> in 3 of 3 runs.</li>
+  <li>Undo backups live in memory, so a chat resumed from history cannot undo runs it applied before.</li>
+  <li>Network blocking is a proxy setting, not an OS sandbox; the secret scanner uses patterns and entropy only (a classifier would need a model call).</li>
   <li>Azure retires the DeepSeek V4.1 Flash preview on 15 Dec 2026; replacing it is a config change.</li>
 </ul>
-<p>With another month: run every eval on macOS and Linux, enforce rollback with a rule that counts only new test failures, keep undo backups with the session, add JS/TS and Go repos to the retrieval evals, and try Code Mode and skills where the sandbox runs.</p>
+<p><b>Next month:</b> evals on macOS and Linux, undo backups kept with the session, JS/TS and Go repos in the retrieval evals.</p>
 
 </body>
 </html>
